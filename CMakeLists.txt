@@ -22,6 +22,11 @@ SET(OSGEARTH_MAJOR_VERSION 2)
 SET(OSGEARTH_MINOR_VERSION 5)
 SET(OSGEARTH_PATCH_VERSION 0)
 SET(OSGEARTH_SOVERSION     0)
+SET(OSGEARTH_PACKAGE_MAINTAINER
+    "Jon Doe <jon.doe@superawesomemail.com>"
+    CACHE STRING
+    "Name and mail adress of the package maintainer(e.g. for debian packages)"
+)
 
 SET(OSGEARTH_PLUGIN_PREFIX "")
 
@@ -123,8 +128,11 @@ FIND_PACKAGE(SilverLining)
 FIND_PACKAGE(Triton)
 
 # JavaScript Engines:
-SET(V8_DIR "" CACHE PATH "set to base V8 install path")
-FIND_PACKAGE(V8)
+OPTION(WITH_V8 "Build osgEarth with V8 JavaScript Engine" OFF)
+IF(WITH_V8)
+    SET(V8_DIR "" CACHE PATH "set to base V8 install path")
+    FIND_PACKAGE(V8)
+ENDIF()
 FIND_PACKAGE(JavaScriptCore)
 
 SET (WITH_EXTERNAL_DUKTAPE FALSE CACHE BOOL "Use bundled or system wide version of Duktape")
@@ -421,11 +429,23 @@ add_subdirectory(docs)
 #------------------------------------------------------------------------------
 # Packaging setup.
 
+SET(CPACK_PACKAGE_NAME "osgearth-all")
 SET(CPACK_PACKAGE_VERSION       ${OSGEARTH_VERSION}       )
 SET(CPACK_PACKAGE_VERSION_MAJOR ${OSGEARTH_MAJOR_VERSION} )
 SET(CPACK_PACKAGE_VERSION_MINOR ${OSGEARTH_MINOR_VERSION} )
 SET(CPACK_PACKAGE_VERSION_PATCH ${OSGEARTH_PATCH_VERSION} )
 SET(CPACK_RESOURCE_FILE_LICENSE ${PROJECT_SOURCE_DIR}/LICENSE.txt )
+SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "osgEarth is a C++ terrain rendering SDK")
 SET(CPACK_MONOLITHIC_INSTALL    1 )                                        # create a single, monolithic package.
+SET(CPACK_DEBIAN_PACKAGE_MAINTAINER ${OSGEARTH_PACKAGE_MAINTAINER})
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE    "http://osgearth.org/")
+set(CPACK_DEBIAN_PACKAGE_SECTION     "Development")
+
+OPTION(WITH_CPACK_DEBIAN_DEPENDENCIES "Add debian dependencies and conflicts to the debian packages" ON)
+IF(WITH_CPACK_DEBIAN_DEPENDENCIES)
+    SET(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.4), libgcc1 (>= 1:4.1), libstdc++6 (>= 4.6), libcurl3-gnutls (>= 2.14), libgdal1h (>= 1.8.0), libgl1-mesa-glx | libgl1, openscenegraph-all (>= 3.3.0) | libopenscenegraph-dev (>= 3.3.0)") 
+    SET(CPACK_DEBIAN_PACKAGE_CONFLICTS 
+        "osgearth, libosgearth-dev, libosgearth2, libosgearthsymbology2, libosgearthfeatures2, libosgearthutil2, libosgearthannotation2, libosgearthqt2")
+ENDIF()
     
 INCLUDE(CPack)
