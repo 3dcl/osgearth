@@ -443,7 +443,7 @@ set(CPACK_DEBIAN_PACKAGE_SECTION     "Development")
 
 OPTION(WITH_CPACK_DEBIAN_DEPENDENCIES "Add debian dependencies and conflicts to the debian packages" ON)
 IF(WITH_CPACK_DEBIAN_DEPENDENCIES)
-    SET(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.4), libgcc1 (>= 1:4.1), libstdc++6 (>= 4.6), libcurl3-gnutls (>= 2.14), libgdal1h (>= 1.8.0), libgl1-mesa-glx | libgl1, openscenegraph-all (>= 3.3.0) | libopenscenegraph-dev (>= 3.3.0)") 
+    SET(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.4), libgcc1 (>= 1:4.1), libstdc++6 (>= 4.6), libcurl3-gnutls (>= 2.14), libgdal1h (>= 1.8.0), libgl1-mesa-glx | libgl1, openscenegraph-all (>= 3.3.0) | libopenscenegraph-dev (>= 3.3.0), libsqlite3-0 (>=3.5.9)") 
     SET(CPACK_DEBIAN_PACKAGE_CONFLICTS 
         "osgearth, libosgearth-dev, libosgearth2, libosgearthsymbology2, libosgearthfeatures2, libosgearthutil2, libosgearthannotation2, libosgearthqt2")
 ENDIF()
