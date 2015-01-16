@@ -254,7 +254,7 @@ ENDIF("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
 
 IF(UNIX AND NOT WIN32 AND NOT APPLE)
   IF(CMAKE_SIZEOF_VOID_P MATCHES "8")
-      SET(LIB_POSTFIX "64" CACHE STRING "suffix for 32/64 dir placement")
+      SET(LIB_POSTFIX "" CACHE STRING "suffix for 32/64 dir placement")
       MARK_AS_ADVANCED(LIB_POSTFIX)
   ENDIF(CMAKE_SIZEOF_VOID_P MATCHES "8")
 ENDIF(UNIX AND NOT WIN32 AND NOT APPLE)
@@ -451,6 +451,7 @@ IF(WITH_CPACK_DEBIAN_DEPENDENCIES)
     SET(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.4), libgcc1 (>= 1:4.1), libstdc++6 (>= 4.6), libcurl3-gnutls (>= 2.14), libgdal1h (>= 1.8.0), libgl1-mesa-glx | libgl1, openscenegraph-all (>= 3.3.0) | libopenscenegraph-dev (>= 3.3.0), libsqlite3-0 (>=3.5.9)") 
     SET(CPACK_DEBIAN_PACKAGE_CONFLICTS 
         "osgearth, libosgearth-dev, libosgearth2, libosgearthsymbology2, libosgearthfeatures2, libosgearthutil2, libosgearthannotation2, libosgearthqt2")
+    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/debian_scripts/postinst;")
 ENDIF()
     
 INCLUDE(CPack)
