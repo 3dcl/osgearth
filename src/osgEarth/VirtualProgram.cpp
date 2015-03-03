@@ -1212,7 +1212,11 @@ VirtualProgram::apply( osg::State& state ) const
         }
 #endif // USE_STACK_MEMORY
 
+#ifdef OSG_VERSION_GREATER_OR_EQUAL(3,3,4)
+        osg::Program::PerContextProgram* pcp = program->getPCP( state );
+#else
         osg::Program::PerContextProgram* pcp = program->getPCP( contextID );
+#endif
         bool useProgram = state.getLastAppliedProgramObject() != pcp;
 
 #ifdef DEBUG_APPLY_COUNTS
