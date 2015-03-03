@@ -17,10 +17,12 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>
 */
 #include <osgEarthUtil/LogarithmicDepthBuffer>
+#include <osgEarthUtil/Shaders>
 #include <osgEarth/CullingUtils>
 #include <osgEarth/VirtualProgram>
 #include <osgEarth/Registry>
 #include <osgEarth/Capabilities>
+#include <osgEarth/ShaderUtils>
 #include <osgUtil/CullVisitor>
 #include <osg/Uniform>
 #include <osg/buffered_value>
@@ -32,6 +34,9 @@
 #define NEAR_RES_COEFF      0.0005  // a.k.a. "C"
 #define NEAR_RES_COEFF_STR "0.0005"
 #define LOG2(X) (::log((double)(X))/::log(2.0))
+
+#define C_UNIFORM  "oe_logDepth_C"
+#define FC_UNIFORM "oe_logDepth_FC"
 
 using namespace osgEarth;
 using namespace osgEarth::Util;
@@ -70,7 +75,7 @@ namespace
                 }
 
                 // the uniform conveying the far clip plane:
-                osg::Uniform* u = stateset->getOrCreateUniform("oe_ldb_FC", osg::Uniform::FLOAT);
+                osg::Uniform* u = stateset->getOrCreateUniform(FC_UNIFORM, osg::Uniform::FLOAT);
 
                 // calculate the far plane based on the camera location:
                 osg::Vec3d E, A, U;
@@ -99,40 +104,6 @@ namespace
         // context-specific stateset collection
         osg::buffered_value<osg::ref_ptr<osg::StateSet> > _stateSets;
     };
-
-    const char* vertSource =
-        "#version " GLSL_VERSION_STR "\n"
-        GLSL_DEFAULT_PRECISION_FLOAT "\n"
-        "uniform float oe_ldb_FC; \n"
-        "varying float oe_ldb_logz; \n"
-        "void oe_ldb_vert(inout vec4 clip) \n"
-        "{ \n"
-        "    const float C = " NEAR_RES_COEFF_STR ";\n"
-        "    oe_ldb_logz = max(1e-6, clip.w*C + 1.0); \n"
-        "    clip.z = log2(oe_ldb_logz)*oe_ldb_FC - 1.0; \n"
-        "} \n";
-
-    const char* fragSource =
-        "#version " GLSL_VERSION_STR "\n"
-        GLSL_DEFAULT_PRECISION_FLOAT "\n"
-        "uniform float oe_ldb_FC; \n"
-        "varying float oe_ldb_logz; \n"
-        "void oe_ldb_frag(inout vec4 color) \n"
-        "{\n"
-        "    gl_FragDepth = log2(oe_ldb_logz)*0.5*oe_ldb_FC; \n"
-        "}\n";
-
-    // This variant does not require using gl_FragDepth, but it less tolerant
-    // of low-res tessellations near the camera.
-    const char* vertOnlySource =
-        "#version " GLSL_VERSION_STR "\n"
-        GLSL_DEFAULT_PRECISION_FLOAT "\n"
-        "uniform float oe_ldb_FC; \n"
-        "void oe_ldb_vert(inout vec4 clip) \n"
-        "{ \n"
-        "    const float C = " NEAR_RES_COEFF_STR ";\n"
-        "    clip.z = (log2(max(1e-6,C*clip.w+1.0))*oe_ldb_FC - 1.0) * clip.w;\n"
-        "} \n";
 }
 
 //------------------------------------------------------------------------
@@ -164,17 +135,20 @@ LogarithmicDepthBuffer::install(osg::Camera* camera)
     {
         // install the shader component:
         osg::StateSet* stateset = camera->getOrCreateStateSet();
+
+        stateset->addUniform( new osg::Uniform(C_UNIFORM, (float)NEAR_RES_COEFF) );
         
         VirtualProgram* vp = VirtualProgram::getOrCreate( stateset );
+        Shaders pkg;
 
         if ( _useFragDepth )
         {
-            vp->setFunction( "oe_ldb_vert", vertSource, ShaderComp::LOCATION_VERTEX_CLIP, FLT_MAX );        
-            vp->setFunction( "oe_ldb_frag", fragSource, ShaderComp::LOCATION_FRAGMENT_LIGHTING, FLT_MAX );        
+            pkg.loadFunction( vp, pkg.LogDepthBuffer_VertFile );
+            pkg.loadFunction( vp, pkg.LogDepthBuffer_FragFile );
         }
         else
         {
-            vp->setFunction( "oe_ldb_vert", vertOnlySource, ShaderComp::LOCATION_VERTEX_CLIP, FLT_MAX );  
+            pkg.loadFunction( vp, pkg.LogDepthBuffer_VertOnly_VertFile );
         }
 
         // configure the camera:
@@ -201,11 +175,14 @@ LogarithmicDepthBuffer::uninstall(osg::Camera* camera)
             VirtualProgram* vp = VirtualProgram::get( camera->getStateSet() );
             if ( vp )
             {
-                vp->removeShader( "oe_ldb_vert" );
-                vp->removeShader( "oe_ldb_frag" );
+                Shaders pkg;
+                pkg.unloadFunction( vp, pkg.LogDepthBuffer_FragFile );
+                pkg.unloadFunction( vp, pkg.LogDepthBuffer_VertFile );
+                pkg.unloadFunction( vp, pkg.LogDepthBuffer_VertOnly_VertFile );
             }
 
-            stateset->removeUniform( "oe_ldb_far" );
+            stateset->removeUniform( FC_UNIFORM );
+            stateset->removeUniform( C_UNIFORM );
         }
     }
 }

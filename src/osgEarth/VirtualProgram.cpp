@@ -27,6 +27,9 @@
 #include <osg/Program>
 #include <osg/State>
 #include <osg/Notify>
+#include <osg/Version>
+#include <osg/GL2Extensions>
+#include <osg/GLExtensions>
 #include <fstream>
 #include <sstream>
 #include <OpenThreads/Thread>
@@ -41,6 +44,8 @@ using namespace osgEarth::ShaderComp;
 //#define USE_ATTRIB_ALIASES
 //#define DEBUG_APPLY_COUNTS
 //#define DEBUG_ACCUMULATION
+
+#define USE_STACK_MEMORY 1
 
 //------------------------------------------------------------------------
 
@@ -88,31 +93,17 @@ namespace
         have a const way to do this. It has getAttributeVec() but that is non-const (it creates
         the vector if it doesn't exist); Newer versions have getAttributeMap(), but that does not
         go back to OSG 3.0. */
-    class StateHack : public osg::State 
+    struct StateEx : public osg::State 
     {
-    public:        
-        typedef std::pair<const osg::StateAttribute*,osg::StateAttribute::OverrideValue> AttributePair;
-        typedef std::vector<AttributePair> AttributeVec;
-
-        const AttributeVec* getAttributeVec( const osg::StateAttribute* attribute ) const
-        {
-            osg::State::AttributeMap::const_iterator i = _attributeMap.find( attribute->getTypeMemberPair() );
-            return i != _attributeMap.end() ? &(i->second.attributeVec) : 0L;
-        }
-
-        static const AttributeVec* GetAttributeVec( const osg::State& state, const osg::StateAttribute* attribute ) 
-        {
-            const StateHack* sh = reinterpret_cast< const StateHack* >( &state );
-            return sh->getAttributeVec( attribute );
-        }
-
-        static const AttributeVec* GetAttributeVec(const osg::State& state, osg::StateAttribute::Type type)
-        {
-            const StateHack* sh = reinterpret_cast< const StateHack* >( &state );
-            osg::State::AttributeMap::const_iterator i = sh->_attributeMap.find( std::make_pair(type, 0) );
-            return i != sh->_attributeMap.end() ? &(i->second.attributeVec) : 0L;            
+        static const VirtualProgram::AttrStack* getProgramStack(const osg::State& state)
+        {            
+            static osg::StateAttribute::TypeMemberPair pair(VirtualProgram::SA_TYPE, 0);
+            const StateEx* sh = reinterpret_cast<const StateEx*>( &state );
+            AttributeMap::const_iterator i = sh->_attributeMap.find( pair );
+            return i != sh->_attributeMap.end() ? &(i->second.attributeVec) : 0L;
         }
     };
+
     typedef std::map<std::string, std::string> HeaderMap;
 
     // removes leading and trailing whitespace, and replaces all other
@@ -451,6 +442,68 @@ namespace
 
 //------------------------------------------------------------------------
 
+void
+VirtualProgram::AttrStackMemory::remember(const osg::State&                 state,
+                                          const VirtualProgram::AttrStack&  rhs,
+                                          osg::Program*                     program)
+{
+    if ( state.getFrameStamp() )
+    {
+        unsigned contextID = state.getContextID();
+        Item& item = _item[contextID];
+        item.frameNumber = state.getFrameStamp()->getFrameNumber();
+        item.attrStack = rhs;
+        item.program = program;
+    }
+}
+
+osg::Program*
+VirtualProgram::AttrStackMemory::recall(const osg::State&                 state,
+                                        const VirtualProgram::AttrStack&  rhs)
+{
+    osg::Program* program = 0L;
+
+    const osg::FrameStamp* fs = state.getFrameStamp();
+    if ( fs )
+    {
+        unsigned contextID = state.getContextID();
+        Item& item = _item[contextID];
+
+        // check frame number:
+        if ( item.program.valid() && item.frameNumber == fs->getFrameNumber() )
+        {
+            // same, how compare the attribute stacks:
+            if ( item.attrStack.size() == rhs.size() )
+            {
+                bool arraysMatch = true;
+                for(int i=0; i<item.attrStack.size() && arraysMatch; ++i)
+                {
+                    if (item.attrStack[i] != rhs[i])
+                    {
+                        arraysMatch = false;
+                    }
+                }
+
+                if (arraysMatch)
+                {
+                    program = item.program.get();
+                }
+            }
+        }
+
+        if ( !program )
+        {
+            item.frameNumber = fs->getFrameNumber();
+            item.attrStack = rhs;
+            item.program = 0L;
+        }
+    }
+
+    return program;
+}
+
+//------------------------------------------------------------------------
+
 VirtualProgram::ShaderEntry::ShaderEntry() :
 _overrideValue(0)
 {
@@ -593,6 +646,11 @@ _template          ( osg::clone(rhs._template.get()) )
     {
         addBindAttribLocation( attribute->first, attribute->second );
     }
+}
+
+VirtualProgram::~VirtualProgram()
+{
+    //NOP
 }
 
 int
@@ -837,7 +895,7 @@ VirtualProgram::setFunction(const std::string&           functionName,
         ShaderComp::Function function;
         function._name   = functionName;
         function._accept = accept;
-        ofm.insert( OrderedFunction(ordering, function) ); //std::make_pair(ordering, function) );
+        ofm.insert( OrderedFunction(ordering, function) );
 
         // create and add the new shader function.
         osg::Shader::Type type = (int)location <= (int)LOCATION_VERTEX_CLIP ?
@@ -946,6 +1004,8 @@ VirtualProgram::apply( osg::State& state ) const
     {
         _active = Registry::capabilities().supportsGLSL();
     }
+    
+    const unsigned contextID = state.getContextID();
 
     if (_shaderMap.empty() && !_inheritSet)
     {
@@ -954,145 +1014,185 @@ VirtualProgram::apply( osg::State& state ) const
         // Sine we have no way of knowing whether the user created the VP or OSG created it
         // as the default fallback, we use the "_inheritSet" flag to differeniate. This
         // prevents any shader leakage from a VP-enabled node.
-        const unsigned int contextID = state.getContextID();
         const osg::GL2Extensions* extensions = osg::GL2Extensions::Get(contextID,true);
-        if( ! extensions->isGlslSupported() ) return;
+#if OSG_MIN_VERSION_REQUIRED(3,3,3)
+		if( ! extensions->isGlslSupported ) return;
+#else
+		if( ! extensions->isGlslSupported() ) return;
+#endif
+        
 
         extensions->glUseProgram( 0 );
         state.setLastAppliedProgramObject(0);
         return;
     }
 
-    // first, find and collect all the VirtualProgram attributes:
-    ShaderMap         accumShaderMap;
-    AttribBindingList accumAttribBindings;
-    AttribAliasMap    accumAttribAliases;
+    osg::ref_ptr<osg::Program> program;
     
-    // Build the active shader map up to this point:
-    if ( _inherit )
+    // Negate osg::State's last-attribute-applied tracking for 
+    // VirtualProgram, since it cannot detect a VP that is reached from
+    // different node/attribute paths. We replace this with the 
+    // stack-memory construct below which will "remember" whether 
+    // the VP has already been applied during the current frame using
+    // the same an identical attribute stack.
+    state.haveAppliedAttribute(this->SA_TYPE);
+
+#ifdef USE_STACK_MEMORY
+    bool programRecalled = false;
+    const AttrStack* stack = StateEx::getProgramStack(state);
+    if ( stack )
     {
-        accumulateShaders(state, _mask, accumShaderMap, accumAttribBindings, accumAttribAliases);
+        program = _vpStackMemory.recall(state, *stack);
+        programRecalled = program.valid();
     }
+#endif // USE_STACK_MEMORY
+    
+    // We need to tracks whether there are any accept callbacks, because if so
+    // we cannot store the program in stack memory -- the accept callback can
+    // exclude shaders based on any condition.
+    bool acceptCallbacksPresent = false;
 
-    // next add the local shader components to the map, respecting the override values:
+    if ( !program.valid() )
     {
-        Threading::ScopedReadLock readonly(_dataModelMutex);
-
-        for( ShaderMap::const_iterator i = _shaderMap.begin(); i != _shaderMap.end(); ++i )
+        // first, find and collect all the VirtualProgram attributes:
+        ShaderMap         accumShaderMap;
+        AttribBindingList accumAttribBindings;
+        AttribAliasMap    accumAttribAliases;
+    
+        // If we are inheriting, build the active shader map up to this point
+        // (but not including this VP).
+        if ( _inherit )
         {
-            if ( i->second.accept(state) )
+            accumulateShaders(
+                state,
+                _mask,
+                accumShaderMap,
+                accumAttribBindings,
+                accumAttribAliases,
+                acceptCallbacksPresent);
+        }
+        
+        // Next, add the shaders from this VP.
+        {
+            Threading::ScopedReadLock readonly(_dataModelMutex);
+
+            for( ShaderMap::const_iterator i = _shaderMap.begin(); i != _shaderMap.end(); ++i )
             {
-                addToAccumulatedMap( accumShaderMap, i->first, i->second );
+                if ( i->second._accept.valid() )
+                {
+                    acceptCallbacksPresent = true;
+                }
+
+                if ( i->second.accept(state) )
+                {
+                    addToAccumulatedMap( accumShaderMap, i->first, i->second );
+                }
+            }
+
+            const AttribBindingList& abl = this->getAttribBindingList();
+            accumAttribBindings.insert( abl.begin(), abl.end() );
+
+    #ifdef USE_ATTRIB_ALIASES
+            const AttribAliasMap& aliases = this->getAttribAliases();
+            accumAttribAliases.insert( aliases.begin(), aliases.end() );
+    #endif
+        }
+
+        // next, assemble a list of the shaders in the map so we can use it as our
+        // program cache key.
+        // (Note: at present, the "cache key" does not include any information on the vertex
+        // attribute bindings. Technically it should, but in practice this might not be an
+        // issue; it is unlikely one would have two identical shader programs with different
+        // bindings.)
+        ShaderVector vec;
+        vec.reserve( accumShaderMap.size() );
+        for( ShaderMap::iterator i = accumShaderMap.begin(); i != accumShaderMap.end(); ++i )
+        {
+            ShaderEntry& entry = i->second;
+            //if ( i->second.accept(state) ) // no need; already did this earlier
+            {
+                vec.push_back( entry._shader.get() );
             }
         }
 
-        const AttribBindingList& abl = this->getAttribBindingList();
-        accumAttribBindings.insert( abl.begin(), abl.end() );
+        // current frame number, for shader program expiry.
+        unsigned frameNumber = state.getFrameStamp() ? state.getFrameStamp()->getFrameNumber() : 0;
 
-#ifdef USE_ATTRIB_ALIASES
-        const AttribAliasMap& aliases = this->getAttribAliases();
-        accumAttribAliases.insert( aliases.begin(), aliases.end() );
-#endif
-    }
-
-
-    // next, assemble a list of the shaders in the map so we can use it as our
-    // program cache key.
-    // (Note: at present, the "cache key" does not include any information on the vertex
-    // attribute bindings. Technically it should, but in practice this might not be an
-    // issue; it is unlikely one would have two identical shader programs with different
-    // bindings.)
-    ShaderVector vec;
-    vec.reserve( accumShaderMap.size() );
-    for( ShaderMap::iterator i = accumShaderMap.begin(); i != accumShaderMap.end(); ++i )
-    {
-        ShaderEntry& entry = i->second;
-        if ( i->second.accept(state) )
+        // look up the program:
         {
-            vec.push_back( entry._shader.get() );
-        }
-    }
-
-    // current frame number, for shader program expiry.
-    unsigned frameNumber = state.getFrameStamp() ? state.getFrameStamp()->getFrameNumber() : 0;
-
-    // see if there's already a program associated with this list:
-    osg::ref_ptr<osg::Program> program;
-
-    // look up the program:
-    {
-        Threading::ScopedReadLock shared( _programCacheMutex );
-        const_cast<VirtualProgram*>(this)->readProgramCache(vec, frameNumber, program);
-    }
-
-    // if not found, lock and build it:
-    if ( !program.valid() )
-    {
-        // build a new set of accumulated functions, to support the creation of main()
-        ShaderComp::FunctionLocationMap accumFunctions;
-        accumulateFunctions( state, accumFunctions );
-
-        // now double-check the program cache, and failing that, build the
-        // new shader Program.
-        {
-            Threading::ScopedWriteLock exclusive( _programCacheMutex );
-
-            // double-check: look again to negate race conditions
+            Threading::ScopedReadLock shared( _programCacheMutex );
             const_cast<VirtualProgram*>(this)->readProgramCache(vec, frameNumber, program);
-            if ( !program.valid() )
+        }
+
+        // if not found, lock and build it:
+        if ( !program.valid() )
+        {
+            // build a new set of accumulated functions, to support the creation of main()
+            ShaderComp::FunctionLocationMap accumFunctions;
+            accumulateFunctions( state, accumFunctions );
+
+            // now double-check the program cache, and failing that, build the
+            // new shader Program.
             {
-                ShaderVector keyVector;
+                Threading::ScopedWriteLock exclusive( _programCacheMutex );
 
-                //OE_NOTICE << LC << "Building new Program for VP " << getName() << std::endl;
-
-                program = buildProgram(
-                    getName(),
-                    state,
-                    accumFunctions,
-                    accumShaderMap, 
-                    accumAttribBindings, 
-                    accumAttribAliases, 
-                    _template.get(),
-                    keyVector);
-
-                if ( _logShaders && program.valid() )
+                // double-check: look again to negate race conditions
+                const_cast<VirtualProgram*>(this)->readProgramCache(vec, frameNumber, program);
+                if ( !program.valid() )
                 {
-                    std::stringstream buf;
-                    for (int i=0; i < program->getNumShaders(); i++)
-                    {
-                        buf << program->getShader(i)->getShaderSource() << std::endl << std::endl;
-                    }
+                    ShaderVector keyVector;
 
-                    if ( _logPath.length() > 0 )
+                    //OE_NOTICE << LC << "Building new Program for VP " << getName() << std::endl;
+
+                    program = buildProgram(
+                        getName(),
+                        state,
+                        accumFunctions,
+                        accumShaderMap, 
+                        accumAttribBindings, 
+                        accumAttribAliases, 
+                        _template.get(),
+                        keyVector);
+
+                    if ( _logShaders && program.valid() )
                     {
-                        std::fstream outStream;
-                        outStream.open(_logPath.c_str(), std::ios::out);
-                        if (outStream.fail())
+                        std::stringstream buf;
+                        for (unsigned i=0; i < program->getNumShaders(); i++)
                         {
-                            OE_WARN << LC << "Unable to open " << _logPath << " for logging shaders." << std::endl;
+                            buf << program->getShader(i)->getShaderSource() << std::endl << std::endl;
+                        }
+
+                        if ( _logPath.length() > 0 )
+                        {
+                            std::fstream outStream;
+                            outStream.open(_logPath.c_str(), std::ios::out);
+                            if (outStream.fail())
+                            {
+                                OE_WARN << LC << "Unable to open " << _logPath << " for logging shaders." << std::endl;
+                            }
+                            else
+                            {
+                                outStream << buf.str();
+                                outStream.close();
+                            }
                         }
                         else
                         {
-                            outStream << buf.str();
-                            outStream.close();
+                          OE_NOTICE << LC << "Shader source: " << getName() << std::endl << "===============" << std::endl << buf.str() << std::endl << "===============" << std::endl;
                         }
                     }
-                    else
-                    {
-                      OE_NOTICE << LC << "Shader source: " << getName() << std::endl << "===============" << std::endl << buf.str() << std::endl << "===============" << std::endl;
-                    }
+
+                    // global sharing.
+                    Registry::programSharedRepo()->share( program );
+
+                    // finally, put own new program in the cache.
+                    ProgramEntry& pe = _programCache[keyVector];
+                    pe._program = program.get();
+                    pe._frameLastUsed = frameNumber;
+
+                    // purge expired programs.
+                    const_cast<VirtualProgram*>(this)->removeExpiredProgramsFromCache(state, frameNumber);
                 }
-
-                // global sharing.
-                Registry::programSharedRepo()->share( program );
-
-                // finally, put own new program in the cache.
-                ProgramEntry& pe = _programCache[keyVector];
-                pe._program = program.get();
-                pe._frameLastUsed = frameNumber;
-
-                // purge expired programs.
-                const_cast<VirtualProgram*>(this)->removeExpiredProgramsFromCache(state, frameNumber);
             }
         }
     }
@@ -1100,16 +1200,25 @@ VirtualProgram::apply( osg::State& state ) const
     // finally, apply the program attribute.
     if ( program.valid() )
     {
-        const unsigned int contextID = state.getContextID();
-        const osg::GL2Extensions* extensions = osg::GL2Extensions::Get(contextID,true);
+#ifdef USE_STACK_MEMORY
+        // remember this program selection in case this VP is applied again
+        // during the same frame.
+        if (programRecalled == false        &&   // recalled a program? not necessary
+            getDataVariance() != DYNAMIC    &&   // DYNAMIC variance? might change during ST cull; no memory
+            acceptCallbacksPresent == false &&   // accept callbacks? cannot use memory
+            stack != 0L )
+        {
+            _vpStackMemory.remember(state, *stack, program.get());
+        }
+#endif // USE_STACK_MEMORY
 
         osg::Program::PerContextProgram* pcp = program->getPCP( contextID );
         bool useProgram = state.getLastAppliedProgramObject() != pcp;
 
 #ifdef DEBUG_APPLY_COUNTS
+        if ( state.getFrameStamp() && state.getFrameStamp()->getFrameNumber()%60==0)
         {
-            // debugging
-
+            // debugging            
             static int s_framenum = 0;
             static Threading::Mutex s_mutex;
             static std::map< const VirtualProgram*, std::pair<int,int> > s_counts;
@@ -1119,12 +1228,12 @@ VirtualProgram::apply( osg::State& state ) const
             int framenum = state.getFrameStamp()->getFrameNumber();
             if ( framenum > s_framenum )
             {
-                OE_NOTICE << LC << "Applies in last frame: " << std::endl;
+                OE_NOTICE << LC << "Use program in last frame: " << std::endl;
                 for(std::map<const VirtualProgram*,std::pair<int,int> >::iterator i = s_counts.begin(); i != s_counts.end(); ++i)
                 {
                     std::pair<int,int>& counts = i->second;
                     OE_NOTICE << LC << "  " 
-                        << i->first->getName() << " : " << counts.second << "/" << counts.first << std::endl;
+                        << i->first->getName() << " : attemped=" << counts.first << ", applied=" << counts.second << "\n";
                 }
                 s_framenum = framenum;
                 s_counts.clear();
@@ -1151,6 +1260,7 @@ VirtualProgram::apply( osg::State& state ) const
             else
             {
                 // program not usable, fallback to fixed function.
+                const osg::GL2Extensions* extensions = osg::GL2Extensions::Get(contextID, true);
                 extensions->glUseProgram( 0 );
                 state.setLastAppliedProgramObject(0);
                 OE_DEBUG << LC << "Program link failure!" << std::endl;
@@ -1253,7 +1363,7 @@ VirtualProgram::accumulateFunctions(const osg::State&                state,
     // the user functions (including those in this program).
     if ( _inherit )
     {
-        const StateHack::AttributeVec* av = StateHack::GetAttributeVec( state, this );
+        const AttrStack* av = StateEx::getProgramStack(state);
         if ( av && av->size() > 0 )
         {
             // find the closest VP that doesn't inherit:
@@ -1337,9 +1447,10 @@ VirtualProgram::accumulateShaders(const osg::State&  state,
                                   unsigned           mask,
                                   ShaderMap&         accumShaderMap,
                                   AttribBindingList& accumAttribBindings,
-                                  AttribAliasMap&    accumAttribAliases)
+                                  AttribAliasMap&    accumAttribAliases,
+                                  bool&              acceptCallbacksPresent)
 {
-    const StateHack::AttributeVec* av = StateHack::GetAttributeVec(state, VirtualProgram::SA_TYPE);
+    const AttrStack* av = StateEx::getProgramStack(state);
     if ( av && av->size() > 0 )
     {
         // find the deepest VP that doesn't inherit:
@@ -1362,6 +1473,11 @@ VirtualProgram::accumulateShaders(const osg::State&  state,
 
                 for( ShaderMap::const_iterator i = vpShaderMap.begin(); i != vpShaderMap.end(); ++i )
                 {
+                    if ( i->second._accept.valid() )
+                    {
+                        acceptCallbacksPresent = true;
+                    }
+
                     if ( i->second.accept(state) )
                     {
                         addToAccumulatedMap( accumShaderMap, i->first, i->second );
@@ -1388,9 +1504,10 @@ VirtualProgram::getShaders(const osg::State&                        state,
     ShaderMap         shaders;
     AttribBindingList bindings;
     AttribAliasMap    aliases;
+    bool              acceptCallbacksPresent;
 
     // build the collection:
-    accumulateShaders(state, ~0, shaders, bindings, aliases);
+    accumulateShaders(state, ~0, shaders, bindings, aliases, acceptCallbacksPresent);
 
     // pre-allocate space:
     output.reserve( shaders.size() );

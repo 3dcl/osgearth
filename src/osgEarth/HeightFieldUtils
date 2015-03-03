@@ -51,16 +51,16 @@ namespace osgEarth
             }
         }
 
-        bool getNeighborForNormalizedLocation(double nx, double ny, osg::ref_ptr<osg::HeightField>& hf, double& out_nx, double& out_ny) const {
+        bool getNeighborForNormalizedLocation(double nx, double ny, osg::HeightField*& hfPtr, double& out_nx, double& out_ny) const {
             int xoffset = nx < 0.0 ? -1 : nx > 1.0 ? 1 : 0;
             int yoffset = ny < 0.0 ? 1 : ny > 1.0 ? -1 : 0;
             if ( xoffset != 0 || yoffset != 0 )
-                hf = getNeighbor(xoffset, yoffset);
+                hfPtr = getNeighbor(xoffset, yoffset);
             else
-                hf = _center.get();
+                hfPtr = _center.get();
             out_nx = nx < 0.0 ? 1.0+nx : nx > 1.0 ? nx-1.0 : nx;
             out_ny = ny < 0.0 ? 1.0+ny : ny > 1.0 ? ny-1.0 : ny;
-            return hf.valid();
+            return hfPtr != 0L;
         }
     };
 
@@ -114,7 +114,7 @@ namespace osgEarth
         static bool getHeightAtNormalizedLocation(
             const HeightFieldNeighborhood& hood,
             double nx, double ny,
-            double& output,
+            float& output,
             ElevationInterpolation interp = INTERP_BILINEAR);
 
         /**
@@ -154,10 +154,10 @@ namespace osgEarth
          * Subsamples a heightfield to the specified extent.
          */
         static osg::HeightField* createSubSample(
-            osg::HeightField*      input, 
-            const GeoExtent&       inputEx,
-            const GeoExtent&       outputEx,
-            ElevationInterpolation interpolation = INTERP_BILINEAR);
+            const osg::HeightField* input, 
+            const GeoExtent&        inputEx,
+            const GeoExtent&        outputEx,
+            ElevationInterpolation  interpolation = INTERP_BILINEAR);
 
         /**
          * Resizes a heightfield, keeping the corner values the same and
@@ -189,6 +189,13 @@ namespace osgEarth
             osg::HeightField*          grid, 
             const osg::EllipsoidModel* em, 
             float verticalScale =1.0f );
+
+        /**
+         * Convert a heightfield (and its neighbors) into a normal map* image.
+         */
+        static osg::Image* convertToNormalMap(
+            const HeightFieldNeighborhood& hood,
+            const SpatialReference*        hoodSRS);
     };
 
     /**

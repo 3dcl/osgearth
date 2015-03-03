@@ -19,7 +19,28 @@ ENDIF(WIN32)
 
 SET(LIB_NAME osgEarth)
 
+set(TARGET_GLSL
+    AlphaEffect.frag.glsl
+    DepthOffset.vert.glsl
+    Draping.vert.glsl
+    Draping.frag.glsl
+    GPUClamping.vert.glsl
+    GPUClamping.vert.lib.glsl
+    GPUClamping.frag.glsl
+    Instancing.vert.glsl)
+
+set(SHADERS_CPP "${CMAKE_CURRENT_BINARY_DIR}/AutoGenShaders.cpp")
+
+set(TARGET_IN
+    Shaders.cpp.in)
+
+configure_shaders(
+    Shaders.cpp.in
+    ${SHADERS_CPP}
+    ${TARGET_GLSL} )
+
 SET(HEADER_PATH ${OSGEARTH_SOURCE_DIR}/include/${LIB_NAME})
+
 SET(LIB_PUBLIC_HEADERS
     AlphaEffect
     AutoScale
@@ -62,6 +83,7 @@ SET(LIB_PUBLIC_HEADERS
     GeoMath
 	GeoTransform
     HeightFieldUtils
+    Horizon
     HTTPClient
     ImageLayer
     ImageMosaic
@@ -97,15 +119,17 @@ SET(LIB_PUBLIC_HEADERS
     Pickers
     PrimitiveIntersector
     Profile
+    Profiler
     Progress
     Random
     Registry
     Revisioning
+    Shaders
     ShaderFactory
     ShaderGenerator
+    ShaderLoader
     ShaderUtils
 	SharedSARepo
-    SparseTexture2DArray
     SpatialReference
     StateSetCache
 	StateSetLOD
@@ -168,11 +192,7 @@ IF (OSGEARTH_EMBED_GIT_SHA)
 	set(VERSION_GIT_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/VersionGit.cpp")	
 ENDIF (OSGEARTH_EMBED_GIT_SHA)
 
-
-ADD_LIBRARY(${LIB_NAME} ${OSGEARTH_USER_DEFINED_DYNAMIC_OR_STATIC}
-    ${LIB_PUBLIC_HEADERS}
-    ${TINYXML_SRC}
-    ${VERSION_GIT_SOURCE}
+set(TARGET_SRC
     AlphaEffect.cpp
     AutoScale.cpp
     Bounds.cpp
@@ -209,6 +229,7 @@ ADD_LIBRARY(${LIB_NAME} ${OSGEARTH_USER_DEFINED_DYNAMIC_OR_STATIC}
     GeoMath.cpp
 	GeoTransform.cpp
     HeightFieldUtils.cpp
+    Horizon.cpp
     HTTPClient.cpp
     ImageLayer.cpp
     ImageMosaic.cpp
@@ -241,14 +262,15 @@ ADD_LIBRARY(${LIB_NAME} ${OSGEARTH_USER_DEFINED_DYNAMIC_OR_STATIC}
     Pickers.cpp
     PrimitiveIntersector.cpp
     Profile.cpp
+    Profiler.cpp
     Progress.cpp
     Random.cpp
     Registry.cpp
     Revisioning.cpp
     ShaderFactory.cpp
     ShaderGenerator.cpp
+    ShaderLoader.cpp
     ShaderUtils.cpp
-    SparseTexture2DArray.cpp
     SpatialReference.cpp
     StateSetCache.cpp
 	StateSetLOD.cpp
@@ -275,7 +297,17 @@ ADD_LIBRARY(${LIB_NAME} ${OSGEARTH_USER_DEFINED_DYNAMIC_OR_STATIC}
     Viewpoint.cpp
     VirtualProgram.cpp
     XmlUtils.cpp
-)
+    ${SHADERS_CPP} )
+
+
+ADD_LIBRARY(
+	${LIB_NAME} ${OSGEARTH_USER_DEFINED_DYNAMIC_OR_STATIC}
+    ${LIB_PUBLIC_HEADERS}
+    ${TINYXML_SRC}
+    ${VERSION_GIT_SOURCE}
+	${TARGET_SRC}
+    ${TARGET_GLSL}
+    ${TARGET_IN} )
 
 INCLUDE_DIRECTORIES(${GDAL_INCLUDE_DIR} ${CURL_INCLUDE_DIR} ${OSG_INCLUDE_DIR} )
 

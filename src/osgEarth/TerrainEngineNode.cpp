@@ -95,7 +95,7 @@ TerrainEngineNode::removeEffect(TerrainEffect* effect)
 
 
 TextureCompositor*
-TerrainEngineNode::getTextureCompositor() const
+TerrainEngineNode::getResources() const
 {
     return _texCompositor.get();
 }
@@ -135,9 +135,12 @@ TerrainEngineNode::ImageLayerController::onColorFiltersChanged( ImageLayer* laye
 
 
 TerrainEngineNode::TerrainEngineNode() :
-_verticalScale         ( 1.0f ),
-_initStage             ( INIT_NONE ),
-_dirtyCount            ( 0 )
+_verticalScale           ( 1.0f ),
+_initStage               ( INIT_NONE ),
+_dirtyCount              ( 0 ),
+_requireElevationTextures( false ),
+_requireNormalTextures   ( false ),
+_requireParentTextures   ( false )
 {
     // register for event traversals so we can properly reset the dirtyCount
     ADJUST_EVENT_TRAV_COUNT( this, 1 );

@@ -26,6 +26,8 @@
 #include <osg/Light>
 #include <osg/Material>
 #include <osg/observer_ptr>
+#include <osgDB/Options>
+#include <map>
 
 namespace osgEarth
 {
@@ -39,7 +41,6 @@ namespace osgEarth
         SHADERPOLICY_GENERATE,
         SHADERPOLICY_INHERIT
     };
-
 
     /**
     * Container for light uniforms

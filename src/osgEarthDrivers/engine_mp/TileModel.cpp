@@ -97,13 +97,13 @@ TileModel::ElevationData::getNormal(const osg::Vec3d&      ndc,
     osg::Vec3d south( hf_ndc.x(), hf_ndc.y()-yres, 0.0 );
     osg::Vec3d north( hf_ndc.x(), hf_ndc.y()+yres, 0.0 );
 
-    if (!HeightFieldUtils::getHeightAtNormalizedLocation(_neighbors, west.x(),  west.y(),  west.z(), interp))
+    if (!HeightFieldUtils::getHeightAtNormalizedLocation(_neighbors, west.x(),  west.y(),  (float&)west.z(), interp))
         west.z() = centerHeight;
-    if (!HeightFieldUtils::getHeightAtNormalizedLocation(_neighbors, east.x(),  east.y(),  east.z(), interp))
+    if (!HeightFieldUtils::getHeightAtNormalizedLocation(_neighbors, east.x(),  east.y(),  (float&)east.z(), interp))
         east.z() = centerHeight;
-    if (!HeightFieldUtils::getHeightAtNormalizedLocation(_neighbors, south.x(), south.y(), south.z(), interp))
+    if (!HeightFieldUtils::getHeightAtNormalizedLocation(_neighbors, south.x(), south.y(), (float&)south.z(), interp))
         south.z() = centerHeight;
-    if (!HeightFieldUtils::getHeightAtNormalizedLocation(_neighbors, north.x(), north.y(), north.z(), interp))
+    if (!HeightFieldUtils::getHeightAtNormalizedLocation(_neighbors, north.x(), north.y(), (float&)north.z(), interp))
         north.z() = centerHeight;
 
     osg::Vec3d westWorld, eastWorld, southWorld, northWorld;
@@ -116,6 +116,30 @@ TileModel::ElevationData::getNormal(const osg::Vec3d&      ndc,
     output.normalize();
 
     return true;
+}
+
+//------------------------------------------------------------------
+
+
+TileModel::NormalData::NormalData(osg::HeightField* hf,
+                                  GeoLocator*       locator,
+                                  bool              fallbackData) :
+_hf          ( hf ),
+_locator     ( locator ),
+_fallbackData( fallbackData )
+{
+    _neighbors._center = hf;
+}
+
+TileModel::NormalData::NormalData(const TileModel::NormalData& rhs) :
+_hf          ( rhs._hf.get() ),
+_locator     ( rhs._locator.get() ),
+_fallbackData( rhs._fallbackData ),
+_parent      ( rhs._parent )
+{
+    _neighbors._center = rhs._neighbors._center.get();
+    for(unsigned i=0; i<8; ++i)
+        _neighbors._neighbors[i] = rhs._neighbors._neighbors[i];
 }
 
 //------------------------------------------------------------------
@@ -255,7 +279,8 @@ _tileLocator     ( rhs._tileLocator.get() ),
 _colorData       ( rhs._colorData ),
 _elevationData   ( rhs._elevationData ),
 _sampleRatio     ( rhs._sampleRatio ),
-_parentStateSet  ( rhs._parentStateSet )
+_parentStateSet  ( rhs._parentStateSet ),
+_useParentData   ( rhs._useParentData )
 {
     //nop
 }
@@ -361,6 +386,28 @@ TileModel::generateElevationTexture()
     _elevationTexture->setWrap  ( osg::Texture::WRAP_T,     osg::Texture::CLAMP_TO_EDGE );
     _elevationTexture->setResizeNonPowerOfTwoHint( false );
     _elevationTexture->setMaxAnisotropy( 1.0f );
+}
+
+void
+TileModel::generateNormalTexture()
+{
+    osg::Image* image = HeightFieldUtils::convertToNormalMap(
+        _normalData.getNeighborhood(),
+        _tileKey.getProfile()->getSRS() );
+
+    _normalTexture = new osg::Texture2D( image );
+
+    _normalTexture->setInternalFormatMode(osg::Texture::USE_IMAGE_DATA_FORMAT);
+    _normalTexture->setFilter( osg::Texture::MAG_FILTER, osg::Texture::LINEAR );
+    //_normalTexture->setFilter( osg::Texture::MIN_FILTER, osg::Texture::LINEAR );
+    _normalTexture->setFilter( osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR );
+    _normalTexture->setWrap  ( osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE );
+    _normalTexture->setWrap  ( osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE );
+    _normalTexture->setResizeNonPowerOfTwoHint( false );
+    _normalTexture->setMaxAnisotropy( 1.0f );
+
+    // So the engine can automatically normalize across tiles.
+    _normalTexture->setUnRefImageDataAfterApply( false );
 }
 
 void

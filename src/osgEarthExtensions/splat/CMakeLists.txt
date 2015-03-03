@@ -2,15 +2,39 @@
 # texture splatting plugin
 #
 
-SET(TARGET_SRC
+set(TARGET_GLSL
+    Splat.types.glsl
+    Splat.Noise.glsl
+    Splat.vert.model.glsl
+    Splat.vert.view.glsl
+    Splat.frag.glsl
+    Splat.frag.common.glsl
+    Splat.frag.getRenderInfo.glsl)
+
+set(SHADERS_CPP "${CMAKE_CURRENT_BINARY_DIR}/AutoGenShaders.cpp")
+
+configure_shaders(
+    SplatShaders.cpp.in
+    ${SHADERS_CPP}
+    ${TARGET_GLSL} )
+
+set(TARGET_IN    
+    SplatShaders.cpp.in)
+
+set(TARGET_SRC
+    Biome.cpp
+	BiomeSelector.cpp
 	SplatPlugin.cpp
 	SplatExtension.cpp
 	SplatCatalog.cpp
 	SplatTerrainEffect.cpp
 	SplatCoverageLegend.cpp
-	ModelSplatter.cpp)
+	ModelSplatter.cpp
+    ${SHADERS_CPP})
 	
-SET(LIB_PUBLIC_HEADERS
+set(LIB_PUBLIC_HEADERS
+    Biome
+	BiomeSelector
 	SplatCoverageLegend
 	SplatCatalog
 	SplatExtension
@@ -21,16 +45,15 @@ SET(LIB_PUBLIC_HEADERS
 SET(TARGET_H
 	${LIB_PUBLIC_HEADERS}
 	SplatExport
-	SplatShaders
-	NoiseShaders)
+	SplatShaders)
 
 SET(TARGET_COMMON_LIBRARIES ${TARGET_COMMON_LIBRARIES}
     osgEarthUtil)
 	
-SETUP_EXTENSION(osgearth_splat)
+setup_extension(osgearth_splat)
 
 # to install public driver includes:
-SET(LIB_NAME splat)
+set(LIB_NAME splat)
 
-INCLUDE(ModuleInstallOsgEarthExtensionIncludes OPTIONAL)
+include(ModuleInstallOsgEarthExtensionIncludes OPTIONAL)
 

@@ -52,6 +52,9 @@ SkyNode::baseInit(const SkyOptions& options)
     _sunVisible = true;
     _moonVisible = true;
     _starsVisible = true;
+    _minimumAmbient.set(0.0f, 0.0f, 0.0f, 0.0f);
+
+    _lightingUniformsHelper = new UpdateLightingUniformsHelper();
 
     setLighting( osg::StateAttribute::ON );
 
@@ -121,6 +124,13 @@ SkyNode::setStarsVisible(bool value)
 {
     _starsVisible = value;
     onSetStarsVisible();
+}
+
+void
+SkyNode::setMinimumAmbient(const osg::Vec4f& value)
+{
+    _minimumAmbient = value;
+    onSetMinimumAmbient();
 }
 
 void

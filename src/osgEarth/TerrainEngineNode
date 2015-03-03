@@ -36,6 +36,19 @@ namespace osgEarth
 {
     class TerrainEffect;
 
+    /**
+     * Interface for querying terrain engine feature requirements.
+     */
+    class TerrainEngineRequirements
+    {
+    public:
+        virtual bool elevationTexturesRequired() const =0;
+        virtual bool normalTexturesRequired() const =0;
+        virtual bool parentTexturesRequired() const =0;
+
+    public:
+        virtual ~TerrainEngineRequirements() { }
+    };
 
     /**
      * TerrainEngineNode is the base class and interface for map engine implementations.
@@ -44,7 +57,8 @@ namespace osgEarth
      * actual geometry representing the Earth.
      */
     class OSGEARTH_EXPORT TerrainEngineNode : public osg::CoordinateSystemNode,
-                                              public TerrainTileNodeBroker
+                                              public TerrainTileNodeBroker,
+                                              public TerrainEngineRequirements
     {
     public:
         /** Gets the map that this engine is rendering. */
@@ -57,8 +71,8 @@ namespace osgEarth
         /** Gets the property set in use by this map engine. */
         virtual const TerrainOptions& getTerrainOptions() const =0;
 
-        /** Accesses the compositor that controls the rendering of image layers */
-        TextureCompositor* getTextureCompositor() const;
+        /** Accesses the object that keeps track of GPU resources in use */
+        TextureCompositor* getResources() const;
 
         /** Adds a terrain effect */
         void addEffect( TerrainEffect* effect );
@@ -82,6 +96,27 @@ namespace osgEarth
             invalidateRegion(extent, 0u, INT_MAX);
         }
 
+        /** Whether the implementation should generate normal map rasters. */
+        void requireNormalTextures() { _requireNormalTextures = true; }
+        
+        /** Whether the implementation should generate elevation map rasters. */
+        void requireElevationTextures() { _requireElevationTextures = true; }
+
+        /** Whether the implementation should generate parent color textures. */
+        void requireParentTextures() { _requireParentTextures = true; }
+
+        /** Access the stateset used to render the terrain. */
+        virtual osg::StateSet* getTerrainStateSet() { return getOrCreateStateSet(); }
+
+        /** Access the stateset used to render payload data. */
+        virtual osg::StateSet* getPayloadStateSet() { return getOrCreateStateSet(); }
+
+    public: // TerrainEngineRequirements
+
+        bool normalTexturesRequired() const { return _requireNormalTextures; }
+        bool elevationTexturesRequired() const { return _requireElevationTextures; }
+        bool parentTexturesRequired() const { return _requireParentTextures; }
+
     public:
         // adds a callback that will be fired while the terrain engine is building
         // a tile node in a background thread.
@@ -99,6 +134,10 @@ namespace osgEarth
           * #deprecated */
         float getVerticalScale() const { return _verticalScale; }
 
+    public: // deprecated
+        
+        /** @derepcated Use getResources() instead. */
+        TextureCompositor* getTextureCompositor() const { return getResources(); }
 
     protected:
         TerrainEngineNode();
@@ -128,6 +167,10 @@ namespace osgEarth
 
         // allow subclasses direct access for convenience.
         osg::ref_ptr<TextureCompositor> _texCompositor;
+
+        bool _requireElevationTextures;
+        bool _requireNormalTextures;
+        bool _requireParentTextures;
 
     public: // TerrainTileNodeBroker
 

@@ -50,7 +50,7 @@
 #include <osgViewer/View>
 #include <osgViewer/ViewerEventHandlers>
 
-#define KML_PUSHPIN_URL "http://demo.pelicanmapping.com/icons/pushpin_yellow.png"
+#define KML_PUSHPIN_URL "../data/placemark32.png"
 
 #define VP_MIN_DURATION      2.0     // minimum fly time.
 #define VP_METERS_PER_SECOND 2500.0  // fly speed
@@ -171,7 +171,7 @@ namespace
 
         virtual void onValueChanged( class Control* control, float value )
         {
-            _sky->getSunLight()->setAmbient(osg::Vec4(value,value,value,1));
+            _sky->setMinimumAmbient(osg::Vec4(value,value,value,1));
         }
     };
 #endif
@@ -183,40 +183,40 @@ namespace
         * @param rate    The time multipler from real time.  Default of 1440 means 1 minute real time will equal 1 day simulation time.
         */
         AnimateSkyUpdateCallback( double rate = 1440 ):
-    _rate( rate ),
-        _prevTime( -1 ),
-        _accumTime( 0.0 )
-    {
-    }
-
-    virtual void operator()(osg::Node* node, osg::NodeVisitor* nv)
-    {             
-        SkyNode* sky = dynamic_cast< SkyNode* >( node );
-        if (sky)
-        {            
-            double time = nv->getFrameStamp()->getSimulationTime();            
-            if (_prevTime > 0)
-            {                
-                TimeStamp t = sky->getDateTime().asTimeStamp();                  
-                double delta = ceil((time - _prevTime) * _rate);
-                _accumTime += delta;
-                // The time stamp only works in seconds so we wait until we've accumulated at least 1 second to change the date.
-                if (_accumTime > 1.0)
-                {
-                    double deltaS = floor(_accumTime );                    
-                    _accumTime -= deltaS;
-                    t += deltaS;
-                    sky->setDateTime( t );                        
-                }                
-            }            
-            _prevTime = time;
+            _rate( rate ),
+            _prevTime( -1 ),
+            _accumTime( 0.0 )
+        {
         }
-        traverse( node, nv );
-    }
 
-    double _accumTime;
-    double _prevTime;    
-    double _rate;
+        virtual void operator()(osg::Node* node, osg::NodeVisitor* nv)
+        {             
+            SkyNode* sky = dynamic_cast< SkyNode* >( node );
+            if (sky)
+            {            
+                double time = nv->getFrameStamp()->getSimulationTime();            
+                if (_prevTime > 0)
+                {                
+                    TimeStamp t = sky->getDateTime().asTimeStamp();                  
+                    double delta = ceil((time - _prevTime) * _rate);
+                    _accumTime += delta;
+                    // The time stamp only works in seconds so we wait until we've accumulated at least 1 second to change the date.
+                    if (_accumTime > 1.0)
+                    {
+                        double deltaS = floor(_accumTime );                    
+                        _accumTime -= deltaS;
+                        t += deltaS;
+                        sky->setDateTime( t );                        
+                    }                
+                }            
+                _prevTime = time;
+            }
+            traverse( node, nv );
+        }
+
+        double _accumTime;
+        double _prevTime;    
+        double _rate;
     };
 
 }
@@ -466,6 +466,8 @@ MapNodeHelper::parse(MapNode*             mapNode,
     bool showActivity  = args.read("--activity");
     bool useLogDepth   = args.read("--logdepth");
     bool useLogDepth2  = args.read("--logdepth2");
+    bool kmlUI         = args.read("--kmlui");
+    bool inspect       = args.read("--inspect");
 
     if (args.read("--verbose"))
         osgEarth::setNotifyLevel(osg::INFO);
@@ -605,13 +607,20 @@ MapNodeHelper::parse(MapNode*             mapNode,
         osg::Node* kml = KML::load( URI(kmlFile), mapNode, kml_options );
         if ( kml )
         {
-            Control* c = AnnotationGraphControlFactory().create(kml, view);
-            if ( c )
+            if (kmlUI)
             {
-                c->setVertAlign( Control::ALIGN_TOP );
-                canvas->addControl( c );
+                Control* c = AnnotationGraphControlFactory().create(kml, view);
+                if ( c )
+                {
+                    c->setVertAlign( Control::ALIGN_TOP );
+                    canvas->addControl( c );
+                }
             }
             root->addChild( kml );
+        }
+        else
+        {
+            OE_NOTICE << "Failed to load " << kmlFile << std::endl;
         }
     }
 
@@ -767,6 +776,11 @@ MapNodeHelper::parse(MapNode*             mapNode,
             uniformBox->addControl( box );
             OE_INFO << LC << "Installed uniform controller for " << name << std::endl;
         }
+    }
+
+    if ( inspect )
+    {
+        mapNode->addExtension( Extension::create("mapinspector", ConfigOptions()) );
     }
     
 

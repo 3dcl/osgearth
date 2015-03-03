@@ -39,15 +39,6 @@ namespace osgEarth { namespace NormalMap
         NormalMapTerrainEffect(
             const osgDB::Options* dbOptions);
 
-        /** Sets the image containing the normal offsets. */
-        void setNormalMapImage(osg::Image* image);
-
-        /** UNiform that controls intensity */
-        osg::Uniform* getIntensityUniform() const { return _intensityUniform.get(); }
-
-        /** Uniform that controls scale factor */
-        osg::Uniform* getScaleUniform() const { return _scaleUniform.get(); }
-
 
     public: // TerrainEffect interface
 
@@ -63,8 +54,6 @@ namespace osgEarth { namespace NormalMap
         int  _normalMapUnit;
         osg::ref_ptr<osg::Texture2D> _normalMapTex;
         osg::ref_ptr<osg::Uniform>   _normalMapTexUniform;
-        osg::ref_ptr<osg::Uniform>   _scaleUniform;
-        osg::ref_ptr<osg::Uniform>   _intensityUniform;
     };
 
 } } // namespace osgEarth::NormalMap

@@ -145,6 +145,8 @@ IF (WITH_EXTERNAL_DUKTAPE)
     FIND_PACKAGE(Duktape)
 ENDIF (WITH_EXTERNAL_DUKTAPE)
 
+OPTION(USE_V8 "Use V8 instead of Duktape if V8 is found" OFF)
+
 FIND_PACKAGE(Qt5Core QUIET)
 FIND_PACKAGE(Qt5Widgets QUIET)
 FIND_PACKAGE(Qt5Gui QUIET)
@@ -161,6 +163,9 @@ ELSE()
 ENDIF ()
 
 OPTION(OSGEARTH_USE_QT "Enable to use Qt (build Qt-dependent libraries, plugins and examples)" ON)
+
+# option to install shaders:
+OPTION(OSGEARTH_INSTALL_SHADERS "Whether to deploy GLSL shaders when doing a Make INSTALL" OFF)
 
 SET (WITH_EXTERNAL_TINYXML FALSE CACHE BOOL "Use bundled or system wide version of TinyXML")
 IF (WITH_EXTERNAL_TINYXML)

@@ -18,10 +18,13 @@
  */
 #include <osgEarth/ShaderUtils>
 #include <osgEarth/ShaderFactory>
+#include <osgEarth/VirtualProgram>
 #include <osgEarth/Registry>
 #include <osgEarth/Capabilities>
 #include <osgEarth/CullingUtils>
+#include <osgEarth/URI>
 #include <osg/ComputeBoundsVisitor>
+#include <osgDB/FileUtils>
 #include <list>
 
 using namespace osgEarth;
@@ -130,7 +133,8 @@ namespace
     }
 }
 
-//------------------------------------------------------------------------
+#undef LC
+#define LC "[ShaderUtils] "
 
 namespace
 {
@@ -312,6 +316,22 @@ void osg_LightSourceParameters::setUniformsFromOsgLight(const osg::Light* light,
                                                       light->getSpecular().y() * frontSpecular.y(),
                                                       light->getSpecular().z() * frontSpecular.z(),
                                                       light->getSpecular().w() * frontSpecular.w()));
+        }
+        else {
+            _frontLightProduct.ambient->set(osg::Vec4(light->getAmbient().x(),
+                                                      light->getAmbient().y(),
+                                                      light->getAmbient().z(),
+                                                      light->getAmbient().w()));
+            
+            _frontLightProduct.diffuse->set(osg::Vec4(light->getDiffuse().x(),
+                                                      light->getDiffuse().y(),
+                                                      light->getDiffuse().z(),
+                                                      light->getDiffuse().w()));
+            
+            _frontLightProduct.specular->set(osg::Vec4(light->getSpecular().x(),
+                                                      light->getSpecular().y(),
+                                                      light->getSpecular().z(),
+                                                      light->getSpecular().w()));
         }
     }
 }

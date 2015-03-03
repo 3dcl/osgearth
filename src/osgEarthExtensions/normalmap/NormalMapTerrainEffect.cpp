@@ -22,73 +22,90 @@
 #include <osgEarth/Capabilities>
 #include <osgEarth/VirtualProgram>
 #include <osgEarth/TerrainEngineNode>
+#include <osgEarth/TerrainTileNode>
+#include <osgEarth/ShaderLoader>
 
 #include "NormalMapShaders"
 
 #define LC "[NormalMap] "
 
-#define NORMALMAP_SAMPLER "oe_nmap_tex"
-
-// Tile LOD offset of the "Level 0" NormalMapting scale. This is necessary
-// to get rid of precision issues when scaling the NormalMaps up high.
-//#define L0_OFFSET "10.0"
+#define NORMAL_SAMPLER "oe_nmap_normalTex"
+#define NORMAL_MATRIX  "oe_nmap_normalTexMatrix"
 
 using namespace osgEarth;
 using namespace osgEarth::NormalMap;
 
-NormalMapTerrainEffect::NormalMapTerrainEffect(const osgDB::Options* dbOptions)
+namespace
 {
-    _scaleUniform     = new osg::Uniform("oe_nmap_scale", 1.0f);
-    _intensityUniform = new osg::Uniform("oe_nmap_intensity", 1.0f);
+    class NormalTexInstaller : public TerrainTileNodeCallback
+    {
+    public:
+        NormalTexInstaller(NormalMapTerrainEffect* effect, int unit)
+            : _effect(effect), _unit(unit) { }
+        
+    public: // TileNodeCallback
+        void operator()(const TileKey& key, osg::Node* node)
+        {
+            TerrainTileNode* tile = osgEarth::findTopMostNodeOfType<TerrainTileNode>(node);
+            if ( !tile )
+                return;
+            
+            osg::StateSet* ss = node->getOrCreateStateSet();
+            osg::Texture* tex = tile->getNormalTexture();
+            if ( tex )
+            {
+                ss->setTextureAttribute(_unit, tex);
+            }
+
+            osg::RefMatrixf* mat = tile->getNormalTextureMatrix();
+            osg::Matrixf fmat;
+            if ( mat )
+            {
+                fmat = osg::Matrixf(*mat);
+            }
+            else
+            {
+                // special marker indicating that there's no valid normal texture.
+                fmat(0,0) = 0.0f;
+            }
+
+            ss->addUniform(new osg::Uniform(NORMAL_MATRIX, fmat) );
+        }
+
+    private:
+        osg::observer_ptr<NormalMapTerrainEffect> _effect;
+        int _unit;
+    };
 }
 
-void
-NormalMapTerrainEffect::setNormalMapImage(osg::Image* image)
+
+NormalMapTerrainEffect::NormalMapTerrainEffect(const osgDB::Options* dbOptions) :
+_normalMapUnit( -1 )
 {
-    if ( image )
-    {
-        _normalMapTex = new osg::Texture2D(image);
-        _normalMapTex->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
-        _normalMapTex->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
-        _normalMapTex->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR);
-        _normalMapTex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
-        _normalMapTex->setMaxAnisotropy(1.0f);
-        _normalMapTex->setUnRefImageDataAfterApply(true);
-        _normalMapTex->setResizeNonPowerOfTwoHint(false);
-    }
-    else
-    {
-        OE_WARN << LC << "Failed to load the bump map texture\n";
-    }
+    //nop
 }
 
 void
 NormalMapTerrainEffect::onInstall(TerrainEngineNode* engine)
 {
-    if ( engine && _normalMapTex.valid() )
+    if ( engine )
     {
-        osg::StateSet* stateset = engine->getOrCreateStateSet();
+        engine->requireNormalTextures();
 
-        // install the NormalMap texture array:
-        if ( engine->getTextureCompositor()->reserveTextureImageUnit(_normalMapUnit) )
-        {
-            // NormalMap sampler
-            _normalMapTexUniform = stateset->getOrCreateUniform(NORMALMAP_SAMPLER, osg::Uniform::SAMPLER_2D);
-            _normalMapTexUniform->set( _normalMapUnit );
-            stateset->setTextureAttribute( _normalMapUnit, _normalMapTex.get(), osg::StateAttribute::ON );
+        engine->getResources()->reserveTextureImageUnit(_normalMapUnit);
+        OE_INFO << LC << "Normal unit = " << _normalMapUnit << "\n";
+        engine->addTileNodeCallback( new NormalTexInstaller(this, _normalMapUnit) );
+        
+        // shader components
+        osg::StateSet* stateset = engine->getTerrainStateSet();
+        VirtualProgram* vp = VirtualProgram::getOrCreate(stateset);
 
-            // configure shaders
-            std::string vertShader = NormalMapVertexShader;
-            std::string fragShader = NormalMapFragmentShader;
-
-            // shader components
-            VirtualProgram* vp = VirtualProgram::getOrCreate(stateset);
-            vp->setFunction( "oe_nmap_vertex",   vertShader, ShaderComp::LOCATION_VERTEX_MODEL );
-            vp->setFunction( "oe_nmap_fragment", fragShader, ShaderComp::LOCATION_FRAGMENT_LIGHTING, -1.0f);
-
-            stateset->addUniform( _scaleUniform.get() );
-            stateset->addUniform( _intensityUniform.get() );
-        }
+        // configure shaders
+        Shaders package;
+        package.loadFunction( vp, package.Vertex );
+        package.loadFunction( vp, package.Fragment );
+        
+        stateset->addUniform( new osg::Uniform(NORMAL_SAMPLER, _normalMapUnit) );
     }
 }
 
@@ -99,25 +116,19 @@ NormalMapTerrainEffect::onUninstall(TerrainEngineNode* engine)
     osg::StateSet* stateset = engine->getStateSet();
     if ( stateset )
     {
-        if ( _normalMapTex.valid() )
-        {
-            stateset->removeUniform( _scaleUniform.get() );
-            stateset->removeUniform( _intensityUniform.get() );
-            stateset->removeUniform( _normalMapTexUniform.get() );
-            stateset->removeTextureAttribute( _normalMapUnit, osg::StateAttribute::TEXTURE );
-        }
-
         VirtualProgram* vp = VirtualProgram::get(stateset);
         if ( vp )
         {
-            vp->removeShader( "oe_nmap_vertex" );
-            vp->removeShader( "oe_nmap_fragment" );
+            Shaders package;
+            package.unloadFunction( vp, package.Vertex );
+            package.unloadFunction( vp, package.Fragment );
         }
+        stateset->removeUniform( NORMAL_SAMPLER );
     }
     
     if ( _normalMapUnit >= 0 )
     {
-        engine->getTextureCompositor()->releaseTextureImageUnit( _normalMapUnit );
+        engine->getResources()->releaseTextureImageUnit( _normalMapUnit );
         _normalMapUnit = -1;
     }
 }

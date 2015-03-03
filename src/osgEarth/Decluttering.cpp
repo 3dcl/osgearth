@@ -17,7 +17,6 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>
 */
 #include <osgEarth/Decluttering>
-//#include <osgEarthAnnotation/AnnotationData>
 #include <osgEarth/ThreadingUtils>
 #include <osgEarth/Utils>
 #include <osgEarth/VirtualProgram>
@@ -87,9 +86,9 @@ namespace
     typedef std::pair<const osg::Node*, osg::BoundingBox> RenderLeafBox;
 
     // Data structure stored one-per-View.
-    struct PerViewInfo
+    struct PerCamInfo
     {
-        PerViewInfo() : _lastTimeStamp(0.0) { }
+        PerCamInfo() : _firstFrame(true) { }
 
         // remembers the state of each drawable from the previous pass
         DrawableMemory _memory;
@@ -100,7 +99,9 @@ namespace
         std::vector<RenderLeafBox>         _used;
 
         // time stamp of the previous pass, for calculating animation speed
-        double _lastTimeStamp;
+        //double _lastTimeStamp;
+        osg::Timer_t _lastTimeStamp;
+        bool _firstFrame;
     };
 
     static bool s_enabledGlobally = true;
@@ -164,7 +165,7 @@ struct /*internal*/ DeclutterSort : public osgUtil::RenderBin::SortCallback
     DeclutterSortFunctor* _customSortFunctor;
     DeclutterContext*     _context;
 
-    Threading::PerObjectMap<osg::View*, PerViewInfo> _perView;
+    Threading::PerObjectMap<osg::Camera*, PerCamInfo> _perCam;
 
     /**
      * Constructs the new sorter.
@@ -202,14 +203,19 @@ struct /*internal*/ DeclutterSort : public osgUtil::RenderBin::SortCallback
             return;
 
         // access the view-specific persistent data:
-        osg::Camera* cam   = bin->getStage()->getCamera();
-        osg::View*   view  = cam->getView();
-        PerViewInfo& local = _perView.get( view );   
-        
+        osg::Camera* cam   = bin->getStage()->getCamera();                
+        PerCamInfo& local = _perCam.get( cam );
+
+        osg::Timer_t now = osg::Timer::instance()->tick();
+        if (local._firstFrame)
+        {            
+            local._firstFrame = false;
+            local._lastTimeStamp = now;
+        }
+
         // calculate the elapsed time since the previous pass; we'll use this for
-        // the animations
-        double now = view ? view->getFrameStamp()->getReferenceTime() : 0.0;
-        float elapsedSeconds = float(now - local._lastTimeStamp);
+        // the animations                
+        float elapsedSeconds = osg::Timer::instance()->delta_s(local._lastTimeStamp, now);
         local._lastTimeStamp = now;
 
         // Reset the local re-usable containers
@@ -634,10 +640,14 @@ Decluttering::setEnabled( osg::StateSet* stateSet, bool enable, int binNum )
                 udc->addUserObject( prevStateSet );
             }
 
-            stateSet->setRenderBinDetails( binNum, OSGEARTH_DECLUTTER_BIN );
+            // the OVERRIDE prevents subsequent statesets from disabling the decluttering bin,
+            // I guess. This wasn't needed in OSG 3.1.4 but now it is.
+            stateSet->setRenderBinDetails(
+                binNum,
+                OSGEARTH_DECLUTTER_BIN,
+                osg::StateSet::OVERRIDE_RENDERBIN_DETAILS);
 
-            // disable renderbin nesting b/c it is incompatible with decluttering;
-            // i.e. we only want one decluttering bin per render stage
+            // Force a single shared decluttering bin per render stage
             stateSet->setNestRenderBins( false );
         }
         else

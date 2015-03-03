@@ -67,6 +67,8 @@ _activeDs   ( 0L )
 
     // always blend.
     this->getOrCreateStateSet()->setMode( GL_BLEND, osg::StateAttribute::ON );
+    // always draw after the terrain.
+    this->getOrCreateStateSet()->setRenderBinDetails( 1, "DepthSortedBin" );
 }
 
 AnnotationNode::AnnotationNode(MapNode* mapNode, const Config& conf) :
@@ -98,7 +100,9 @@ _activeDs   ( 0L )
         // blend by default.
         this->getOrCreateStateSet()->setMode( GL_BLEND, osg::StateAttribute::ON );
     }
-
+    
+    // always draw after the terrain.
+    this->getOrCreateStateSet()->setRenderBinDetails( 1, "DepthSortedBin" );
 }
 
 AnnotationNode::~AnnotationNode()
@@ -406,7 +410,7 @@ AnnotationNode::applyGeneralSymbology(const Style& style)
                 (render->lighting() == true? osg::StateAttribute::ON : osg::StateAttribute::OFF) | osg::StateAttribute::OVERRIDE );
         }
 
-        if ( render->depthOffset().isSet() ) // && !_depthAdj )
+        if ( render->depthOffset().isSet() )
         {
             _doAdapter.setDepthOffsetOptions( *render->depthOffset() );
             setDepthAdjustment( true );
@@ -419,10 +423,22 @@ AnnotationNode::applyGeneralSymbology(const Style& style)
                 (render->backfaceCulling() == true? osg::StateAttribute::ON : osg::StateAttribute::OFF) | osg::StateAttribute::OVERRIDE );
         }
 
+#ifndef OSG_GLES2_AVAILABLE
         if ( render->clipPlane().isSet() )
         {
             GLenum mode = GL_CLIP_PLANE0 + render->clipPlane().value();
             getOrCreateStateSet()->setMode(mode, 1);
+        }
+#endif
+
+        if ( render->order().isSet() || render->renderBin().isSet() )
+        {
+            osg::StateSet* ss = getOrCreateStateSet();
+            int binNumber = render->order().isSet() ? (int)render->order()->eval() : ss->getBinNumber();
+            std::string binName =
+                render->renderBin().isSet() ? render->renderBin().get() :
+                ss->useRenderBinDetails() ? ss->getBinName() : "RenderBin";
+            ss->setRenderBinDetails(binNumber, binName);
         }
 
         if ( render->minAlpha().isSet() )

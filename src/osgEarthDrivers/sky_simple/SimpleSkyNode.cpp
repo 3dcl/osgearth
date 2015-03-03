@@ -32,10 +32,12 @@
 #include <osgEarth/CullingUtils>
 #include <osgEarth/ShaderFactory>
 #include <osgEarth/ShaderGenerator>
+#include <osgEarth/Shaders>
 
 #include <osg/MatrixTransform>
 #include <osg/ShapeDrawable>
 #include <osg/PointSprite>
+#include <osg/PolygonMode>
 #include <osg/BlendFunc>
 #include <osg/FrontFace>
 #include <osg/CullFace>
@@ -338,6 +340,12 @@ SimpleSkyNode::onSetDateTime()
 }
 
 void
+SimpleSkyNode::onSetMinimumAmbient()
+{
+    _light->setAmbient( getMinimumAmbient() );
+}
+
+void
 SimpleSkyNode::attach( osg::View* view, int lightNum )
 {
     if ( !view || !_light.valid() )
@@ -407,17 +415,11 @@ SimpleSkyNode::makeSceneLighting()
     VirtualProgram* vp = VirtualProgram::getOrCreate( stateset );
     vp->setName( "SimpleSky Scene Lighting" );
 
-    if ( _options.atmosphericLighting() == true )
+    if (_options.atmosphericLighting() == true && !Registry::capabilities().isGLES() )
     {
-        vp->setFunction(
-            "atmos_vertex_main",
-            Ground_Scattering_Vertex,
-            ShaderComp::LOCATION_VERTEX_VIEW);
-
-        vp->setFunction(
-            "atmos_fragment_main", 
-            Ground_Scattering_Fragment,
-            ShaderComp::LOCATION_FRAGMENT_LIGHTING);
+        Shaders pkg;
+        pkg.loadFunction( vp, pkg.Ground_ONeil_Vert );
+        pkg.loadFunction( vp, pkg.Ground_ONeil_Frag );
     }
 
     else
@@ -471,6 +473,14 @@ SimpleSkyNode::makeAtmosphere(const osg::EllipsoidModel* em)
     // create some skeleton geometry to shade:
     osg::Geometry* drawable = s_makeEllipsoidGeometry( em, _outerRadius, false );
 
+    // disable wireframe/point rendering on the atmosphere, since it is distracting.
+    if ( _options.allowWireframe() == false )
+    {
+        drawable->getOrCreateStateSet()->setAttributeAndModes(
+            new osg::PolygonMode(osg::PolygonMode::FRONT_AND_BACK, osg::PolygonMode::FILL),
+            osg::StateAttribute::PROTECTED);
+    }
+
     osg::Geode* geode = new osg::Geode();
     geode->addDrawable( drawable );
     
@@ -489,15 +499,9 @@ SimpleSkyNode::makeAtmosphere(const osg::EllipsoidModel* em)
         vp->setName( "SimpleSky Atmosphere" );
         vp->setInheritShaders( false );
 
-        vp->setFunction(
-            "atmos_vertex_main",
-            Atmosphere_Vertex,
-            ShaderComp::LOCATION_VERTEX_VIEW);
-
-        vp->setFunction(
-            "atmos_fragment_main",
-            Atmosphere_Fragment,
-            ShaderComp::LOCATION_FRAGMENT_LIGHTING);
+        Shaders pkg;
+        pkg.loadFunction( vp, pkg.Atmosphere_Vert );
+        pkg.loadFunction( vp, pkg.Atmosphere_Frag );
     }
 
     // A nested camera isolates the projection matrix calculations so the node won't 
@@ -535,11 +539,19 @@ SimpleSkyNode::makeSun()
     set->setAttributeAndModes( new osg::Depth(osg::Depth::ALWAYS, 0, 1, false), osg::StateAttribute::ON );
 
     // create shaders
+    Shaders pkg;
     osg::Program* program = new osg::Program();
-    osg::Shader* vs = new osg::Shader( osg::Shader::VERTEX, Sun_Vertex );
+
+    osg::Shader* vs = new osg::Shader(
+        osg::Shader::VERTEX,
+        ShaderLoader::load(pkg.Sun_Vert, pkg) );
     program->addShader( vs );
-    osg::Shader* fs = new osg::Shader( osg::Shader::FRAGMENT, Sun_Fragment );
+
+    osg::Shader* fs = new osg::Shader(
+        osg::Shader::FRAGMENT,
+        ShaderLoader::load(pkg.Sun_Frag, pkg) );
     program->addShader( fs );
+
     set->setAttributeAndModes( program, osg::StateAttribute::ON );
 
     // A nested camera isolates the projection matrix calculations so the node won't 
@@ -593,16 +605,21 @@ SimpleSkyNode::makeMoon()
     set->setRenderBinDetails( BIN_MOON, "RenderBin" );
     set->setAttributeAndModes( new osg::Depth(osg::Depth::ALWAYS, 0, 1, false), osg::StateAttribute::ON );
     set->setAttributeAndModes( new osg::BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA), osg::StateAttribute::ON );
-
+    
 #ifdef OSG_GLES2_AVAILABLE
 
     set->addUniform(new osg::Uniform("moonTex", 0));
 
     // create shaders
+    Shaders pkg;
     osg::Program* program = new osg::Program();
-    osg::Shader* vs = new osg::Shader( osg::Shader::VERTEX, Moon_Vertex );
+    osg::Shader* vs = new osg::Shader(
+        osg::Shader::VERTEX,
+        ShaderLoader::load(pkg.Moon_Vert, pkg) );
     program->addShader( vs );
-    osg::Shader* fs = new osg::Shader( osg::Shader::FRAGMENT, Moon_Fragment );
+    osg::Shader* fs = new osg::Shader(
+        osg::Shader::FRAGMENT,
+        ShaderLoader::load(pkg.Moon_Frag, pkg) );
     program->addShader( fs );
     set->setAttributeAndModes( program, osg::StateAttribute::ON | osg::StateAttribute::PROTECTED );
 #endif
@@ -723,16 +740,17 @@ SimpleSkyNode::buildStarGeometry(const std::vector<StarData>& stars)
     sset->setTextureAttributeAndModes( 0, new osg::PointSprite(), osg::StateAttribute::ON );
     sset->setMode( GL_VERTEX_PROGRAM_POINT_SIZE, osg::StateAttribute::ON );
 
+    Shaders pkg;
     std::string starVertSource, starFragSource;
-    if ( Registry::capabilities().getGLSLVersion() < 1.2f )
+    if ( Registry::capabilities().isGLES() )
     {
-        starVertSource = Stars_Vertex_110;
-        starFragSource = Stars_Fragment_110;
+        starVertSource = ShaderLoader::load(pkg.Stars_GLES_Vert, pkg);
+        starFragSource = ShaderLoader::load(pkg.Stars_GLES_Frag, pkg);
     }
     else
     {
-        starVertSource = Stars_Vertex_120;
-        starFragSource = Stars_Fragment_120;
+        starVertSource = ShaderLoader::load(pkg.Stars_Vert, pkg);
+        starFragSource = ShaderLoader::load(pkg.Stars_Frag, pkg);
     }
 
     osg::Program* program = new osg::Program;

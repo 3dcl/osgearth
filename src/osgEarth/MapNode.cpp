@@ -294,6 +294,7 @@ MapNode::init()
     // model layer will still work OK though.
     _models = new osg::Group();
     _models->setName( "osgEarth::MapNode.modelsGroup" );
+    _models->getOrCreateStateSet()->setRenderBinDetails(2, "RenderBin");
     addChild( _models.get() );
 
     // a decorator for overlay models:
@@ -533,7 +534,8 @@ MapNode::onModelLayerAdded( ModelLayer* layer, unsigned int index )
     }
 
     // create the scene graph:
-    osg::Node* node = layer->getOrCreateSceneGraph( _map.get(), _map->getDBOptions(), 0L );
+    //osg::Node* node = layer->getOrCreateSceneGraph( _map.get(), _map->getDBOptions(), 0L );
+    osg::Node* node = layer->getOrCreateSceneGraph( _map.get(), 0L );
 
     if ( node )
     {

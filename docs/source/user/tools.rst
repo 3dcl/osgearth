@@ -168,6 +168,8 @@ osgearth_package creates a redistributable `TMS`_ based package from an earth fi
 | ``--concurrency``                  | The number of threads or proceses to use if --mp or --mt           |
 |                                    | are provided                                                       | 
 +------------------------------------+--------------------------------------------------------------------+
+| ``--verbose``                      | Displays progress of the operation                                 |
++------------------------------------+--------------------------------------------------------------------+
 
 osgearth_conv
 ----------------
@@ -217,6 +219,9 @@ In addition, the TFS package generated can be served by any standard web server,
 | ``--max-level level``            | The maximum level of the feature quadtree                          | 
 +----------------------------------+--------------------------------------------------------------------+
 | ``--max-features``               | The maximum number of features per tile                            |
++----------------------------------+--------------------------------------------------------------------+
+| ``--grid``                       | Generate a single level grid with the specified resolution.        |
+|                                  | Default units are meters. (ex. 50, 100km, 200mi)                   |
 +----------------------------------+--------------------------------------------------------------------+
 | ``--out``                        | The destination directory                                          |
 +----------------------------------+--------------------------------------------------------------------+
