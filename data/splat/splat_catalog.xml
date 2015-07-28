@@ -56,7 +56,7 @@
 			<image>water.jpg</image>
 		</class>
 		<class name="mountain">
-			<image>iron.jpg</image>
+			<image>rock_dark.jpg</image>
 		</class>
 		<class name="tundra">
 			<image>tundra.jpg</image>
@@ -70,5 +70,8 @@
 		<class name="urban">
 			<image>urban3.jpg</image>
 		</class>
+        <class name="asphalt">
+            <image>asphalt.jpg</image>
+        </class>
 	</classes>
 </catalog>

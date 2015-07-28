@@ -1,6 +1,6 @@
 /* -*-c++-*- */
 /* osgEarth - Dynamic map generation toolkit for OpenSceneGraph
-* Copyright 2008-2014 Pelican Mapping
+* Copyright 2015 Pelican Mapping
 * http://osgearth.org
 *
 * osgEarth is free software; you can redistribute it and/or modify
@@ -8,10 +8,13 @@
 * the Free Software Foundation; either version 2 of the License, or
 * (at your option) any later version.
 *
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU Lesser General Public License for more details.
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+* IN THE SOFTWARE.
 *
 * You should have received a copy of the GNU Lesser General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>
@@ -299,7 +302,6 @@ MapNode::init()
 
     // a decorator for overlay models:
     _overlayDecorator = new OverlayDecorator();
-    _overlayDecorator->setOverlayGraphTraversalMask( terrainOptions.secondaryTraversalMask().value() );
 
     // install the Draping technique for overlays:
     {
@@ -345,6 +347,7 @@ MapNode::init()
     _map->addMapCallback( _mapCallback.get()  );
 
     osg::StateSet* stateset = getOrCreateStateSet();
+
     if ( _mapNodeOptions.enableLighting().isSet() )
     {
         stateset->addUniform(Registry::shaderFactory()->createUniformForGLMode(
@@ -355,6 +358,26 @@ MapNode::init()
             GL_LIGHTING, 
             _mapNodeOptions.enableLighting().value() ? 1 : 0);
     }
+
+    // Add in some global uniforms
+    stateset->addUniform( new osg::Uniform("oe_isGeocentric", _map->isGeocentric()) );
+    if ( _map->isGeocentric() )
+    {
+        OE_INFO << LC << "Adding ellipsoid uniforms.\n";
+
+        // for a geocentric map, use an ellipsoid unit-frame transform and its inverse:
+        osg::Vec3d ellipFrameInverse(
+            _map->getSRS()->getEllipsoid()->getRadiusEquator(),
+            _map->getSRS()->getEllipsoid()->getRadiusEquator(),
+            _map->getSRS()->getEllipsoid()->getRadiusPolar());
+        stateset->addUniform( new osg::Uniform("oe_ellipsoidFrameInverse", osg::Vec3f(ellipFrameInverse)) );
+
+        osg::Vec3d ellipFrame = osg::componentDivide(osg::Vec3d(1.0,1.0,1.0), ellipFrameInverse);
+        stateset->addUniform( new osg::Uniform("oe_ellipsoidFrame", osg::Vec3f(ellipFrame)) );
+    }
+
+    // install the default rendermode uniform:
+    stateset->addUniform( new osg::Uniform("oe_isPickCamera", false) );
 
     dirtyBound();
 

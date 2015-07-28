@@ -131,6 +131,7 @@ FIND_PACKAGE(LevelDB)
 
 FIND_PACKAGE(SilverLining)
 FIND_PACKAGE(Triton)
+FIND_PACKAGE(Protobuf)
 
 # JavaScript Engines:
 OPTION(WITH_V8 "Build osgEarth with V8 JavaScript Engine" OFF)
