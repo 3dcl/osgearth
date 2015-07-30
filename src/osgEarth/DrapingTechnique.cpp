@@ -1,6 +1,6 @@
 /* -*-c++-*- */
 /* osgEarth - Dynamic map generation toolkit for OpenSceneGraph
-* Copyright 2008-2014 Pelican Mapping
+* Copyright 2015 Pelican Mapping
 * http://osgearth.org
 *
 * osgEarth is free software; you can redistribute it and/or modify
@@ -8,10 +8,13 @@
 * the Free Software Foundation; either version 2 of the License, or
 * (at your option) any later version.
 *
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU Lesser General Public License for more details.
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+* IN THE SOFTWARE.
 *
 * You should have received a copy of the GNU Lesser General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>
@@ -19,6 +22,7 @@
 #include <osgEarth/DrapingTechnique>
 #include <osgEarth/Capabilities>
 #include <osgEarth/Registry>
+#include <osgEarth/ShaderFactory>
 #include <osgEarth/VirtualProgram>
 #include <osgEarth/Shaders>
 
@@ -332,7 +336,7 @@ DrapingTechnique::reestablish(TerrainEngineNode* engine)
         else if ( !_textureUnit.isSet() )
         {
             int texUnit;
-            if ( engine->getResources()->reserveTextureImageUnit( texUnit ) )
+            if ( engine->getResources()->reserveTextureImageUnit(texUnit, "DrapingTechnique") )
             {
                 _textureUnit = texUnit;
                 OE_INFO << LC << "Reserved texture image unit " << *_textureUnit << std::endl;
@@ -406,13 +410,11 @@ DrapingTechnique::setUpCamera(OverlayDecorator::TechRTTParams& params)
     // set up a StateSet for the RTT camera.
     osg::StateSet* rttStateSet = params._rttCamera->getOrCreateStateSet();
 
-    // lighting is off. We don't want draped items to be lit.
-    rttStateSet->setMode( GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::PROTECTED );
+    osg::StateAttribute::OverrideValue forceOff =
+        osg::StateAttribute::OFF | osg::StateAttribute::PROTECTED | osg::StateAttribute::OVERRIDE;
 
-    // install a new default shader program that replaces anything from above.
-    VirtualProgram* rtt_vp = VirtualProgram::getOrCreate(rttStateSet);
-    rtt_vp->setName( "DrapingTechnique RTT" );
-    rtt_vp->setInheritShaders( false );
+    rttStateSet->addUniform( Registry::shaderFactory()->createUniformForGLMode(GL_LIGHTING, forceOff) );
+    rttStateSet->setMode( GL_LIGHTING, forceOff );
     
     // activate blending within the RTT camera's FBO
     if ( _rttBlending )
@@ -471,8 +473,8 @@ DrapingTechnique::setUpCamera(OverlayDecorator::TechRTTParams& params)
 
     // shaders
     Shaders pkg;
-    pkg.loadFunction( terrain_vp, pkg.DrapingVertex );
-    pkg.loadFunction( terrain_vp, pkg.DrapingFragment );
+    pkg.load( terrain_vp, pkg.DrapingVertex );
+    pkg.load( terrain_vp, pkg.DrapingFragment );
 }
 
 

@@ -1,6 +1,6 @@
 /* -*-c++-*- */
 /* osgEarth - Dynamic map generation toolkit for OpenSceneGraph
- * Copyright 2008-2014 Pelican Mapping
+ * Copyright 2015 Pelican Mapping
  * http://osgearth.org
  *
  * osgEarth is free software; you can redistribute it and/or modify
@@ -63,7 +63,7 @@ namespace osgEarth
 
 TerrainEngineNode::ImageLayerController::ImageLayerController(const Map*         map,
                                                               TerrainEngineNode* engine) :
-_mapf  ( map, Map::IMAGE_LAYERS, "TerrainEngineNode.ImageLayerController" ),
+_mapf  ( map, Map::IMAGE_LAYERS ),
 _engine( engine )
 {
     //nop
@@ -100,35 +100,11 @@ TerrainEngineNode::getResources() const
     return _texCompositor.get();
 }
 
-
-// this handler adjusts the uniform set when a terrain layer's "enabed" state changes
-void
-TerrainEngineNode::ImageLayerController::onVisibleChanged( TerrainLayer* layer )
-{
-    _engine->dirty();
-}
-
-
-// this handler adjusts the uniform set when a terrain layer's "opacity" value changes
-void
-TerrainEngineNode::ImageLayerController::onOpacityChanged( ImageLayer* layer )
-{
-    _engine->dirty();
-}
-
-void
-TerrainEngineNode::ImageLayerController::onVisibleRangeChanged( ImageLayer* layer )
-{
-    _engine->dirty();
-}
-
 void
 TerrainEngineNode::ImageLayerController::onColorFiltersChanged( ImageLayer* layer )
 {
     _engine->updateTextureCombining();
-    _engine->dirty();
 }
-
 
 
 //------------------------------------------------------------------------
@@ -152,7 +128,7 @@ TerrainEngineNode::~TerrainEngineNode()
     //Remove any callbacks added to the image layers
     if (_map.valid())
     {
-        MapFrame mapf( _map.get(), Map::IMAGE_LAYERS, "TerrainEngineNode::~TerrainEngineNode" );
+        MapFrame mapf( _map.get(), Map::IMAGE_LAYERS );
         for( ImageLayerVector::const_iterator i = mapf.imageLayers().begin(); i != mapf.imageLayers().end(); ++i )
         {
             i->get()->removeCallback( _imageLayerController.get() );
@@ -162,7 +138,29 @@ TerrainEngineNode::~TerrainEngineNode()
 
 
 void
-TerrainEngineNode::dirty()
+TerrainEngineNode::requireNormalTextures()
+{
+    _requireNormalTextures = true;
+    dirtyTerrain();
+}
+
+void
+TerrainEngineNode::requireElevationTextures()
+{
+    _requireElevationTextures = true;
+    dirtyTerrain();
+}
+
+void
+TerrainEngineNode::requireParentTextures()
+{
+    _requireParentTextures = true;
+    dirtyTerrain();
+}
+
+
+void
+TerrainEngineNode::requestRedraw()
 {
     if ( 0 == _dirtyCount++ )
     {
@@ -170,6 +168,12 @@ TerrainEngineNode::dirty()
         ViewVisitor<RequestRedraw> visitor;
         this->accept(visitor);
     }
+}
+
+void
+TerrainEngineNode::dirtyTerrain()
+{
+    requestRedraw();
 }
 
 
@@ -221,7 +225,7 @@ TerrainEngineNode::postInitialize( const Map* map, const TerrainOptions& options
         _imageLayerController = new ImageLayerController( _map.get(), this );
 
         // register the layer Controller it with all pre-existing image layers:
-        MapFrame mapf( _map.get(), Map::IMAGE_LAYERS, "TerrainEngineNode::initialize" );
+        MapFrame mapf( _map.get(), Map::IMAGE_LAYERS );
         for( ImageLayerVector::const_iterator i = mapf.imageLayers().begin(); i != mapf.imageLayers().end(); ++i )
         {
             i->get()->addCallback( _imageLayerController.get() );
@@ -282,7 +286,7 @@ TerrainEngineNode::onMapModelChanged( const MapModelChange& change )
     }
 
     // notify that a redraw is required.
-    dirty();
+    requestRedraw();
 }
 
 namespace
@@ -333,6 +337,7 @@ TerrainEngineNode::addTileNodeCallback(TerrainTileNodeCallback* cb)
 {
     Threading::ScopedMutexLock lock(_tileNodeCallbacksMutex);
     _tileNodeCallbacks.push_back( cb );
+    notifyExistingNodes( cb );
 }
 
 void

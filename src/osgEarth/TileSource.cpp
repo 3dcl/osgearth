@@ -1,6 +1,6 @@
 /* -*-c++-*- */
 /* osgEarth - Dynamic map generation toolkit for OpenSceneGraph
- * Copyright 2008-2014 Pelican Mapping
+ * Copyright 2015 Pelican Mapping
  * http://osgearth.org
  *
  * osgEarth is free software; you can redistribute it and/or modify
@@ -25,6 +25,7 @@
 #include <osgEarth/Registry>
 #include <osgEarth/ThreadingUtils>
 #include <osgEarth/MemCache>
+#include <osgEarth/MapFrame>
 #include <osgDB/FileUtils>
 #include <osgDB/FileNameUtils>
 #include <osgDB/ReadFile>
@@ -150,7 +151,8 @@ _noDataValue          ( (float)SHRT_MIN ),
 _minValidValue        ( -32000.0f ),
 _maxValidValue        (  32000.0f ),
 _L2CacheSize          ( 16 ),
-_bilinearReprojection ( true )
+_bilinearReprojection ( true ),
+_coverage             ( false )
 { 
     fromConfig( _conf );
 }
@@ -163,13 +165,12 @@ TileSourceOptions::getConfig() const
     conf.updateIfSet( "tile_size", _tileSize );
     conf.updateIfSet( "nodata_value", _noDataValue );
     conf.updateIfSet( "min_valid_value", _minValidValue );
-    conf.updateIfSet( "nodata_min", _minValidValue ); // backcompat
     conf.updateIfSet( "max_valid_value", _maxValidValue );
-    conf.updateIfSet( "nodata_max", _maxValidValue ); // backcompat
     conf.updateIfSet( "blacklist_filename", _blacklistFilename);
     conf.updateIfSet( "l2_cache_size", _L2CacheSize );
     conf.updateIfSet( "bilinear_reprojection", _bilinearReprojection );
     conf.updateIfSet( "max_data_level", _maxDataLevel );
+    conf.updateIfSet( "coverage", _coverage );
     conf.updateObjIfSet( "profile", _profileOptions );
     return conf;
 }
@@ -188,12 +189,15 @@ TileSourceOptions::fromConfig( const Config& conf )
 {
     conf.getIfSet( "tile_size", _tileSize );
     conf.getIfSet( "nodata_value", _noDataValue );
-    conf.getIfSet( "nodata_min", _minValidValue );
-    conf.getIfSet( "nodata_max", _maxValidValue );
+    conf.getIfSet( "min_valid_value", _minValidValue );
+    conf.getIfSet( "nodata_min", _minValidValue ); // backcompat
+    conf.getIfSet( "max_valid_value", _maxValidValue );
+    conf.getIfSet( "nodata_max", _maxValidValue ); // backcompat
     conf.getIfSet( "blacklist_filename", _blacklistFilename);
     conf.getIfSet( "l2_cache_size", _L2CacheSize );
     conf.getIfSet( "bilinear_reprojection", _bilinearReprojection );
     conf.getIfSet( "max_data_level", _maxDataLevel );
+    conf.getIfSet( "coverage", _coverage );
     conf.getObjIfSet( "profile", _profileOptions );
 }
 
@@ -213,19 +217,27 @@ const TileSource::Mode TileSource::MODE_CREATE = 0x04;
 TileSource::TileSource(const TileSourceOptions& options) :
 _options( options ),
 _status ( Status::Error("Not initialized") ),
-_mode   ( 0 )
+_mode   ( 0 ),
+_frame  ( 0L )
 {
     this->setThreadSafeRefUnref( true );
 
-    int l2CacheSize = 0;
+    _frame = new MapFrame();
+
+    // Initialize the l2 cache size to the options.
+    int l2CacheSize = *options.L2CacheSize();
+
+    // See if it was overridden with an env var.
     char const* l2env = ::getenv( "OSGEARTH_L2_CACHE_SIZE" );
     if ( l2env )
     {
         l2CacheSize = as<int>( std::string(l2env), 0 );
     }
-    else if ( *options.L2CacheSize() > 0 )
+
+    // Initialize the l2 cache if it's size is > 0
+    if ( l2CacheSize > 0 )
     {
-        _memCache = new MemCache( *options.L2CacheSize() );
+        _memCache = new MemCache( l2CacheSize );
     }
 
     if (_options.blacklistFilename().isSet())
@@ -255,6 +267,11 @@ TileSource::~TileSource()
     if (_blacklist.valid() && !_blacklistFilename.empty())
     {
         _blacklist->write(_blacklistFilename);
+    }
+
+    if ( _frame )
+    {
+        delete _frame;
     }
 }
 
@@ -310,6 +327,45 @@ int
 TileSource::getPixelsPerTile() const
 {
     return _options.tileSize().value();
+}
+
+
+void TileSource::dirtyDataExtents()
+{
+    _dataExtentsUnion = GeoExtent::INVALID;
+}
+
+const GeoExtent& TileSource::getDataExtentsUnion() const
+{
+    if (_dataExtentsUnion.isInvalid() && _dataExtents.size() > 0)
+    {
+        static Threading::Mutex s_mutex;
+        Threading::ScopedMutexLock lock(s_mutex);
+        {
+            if (_dataExtentsUnion.isInvalid() && _dataExtents.size() > 0) // double-check
+            {
+                GeoExtent e(_dataExtents[0]);
+                for (unsigned int i = 1; i < _dataExtents.size(); i++)
+                {
+                    e.expandToInclude(_dataExtents[i]);
+                }
+                const_cast<TileSource*>(this)->_dataExtentsUnion = e;
+            }
+        }
+    }
+    return _dataExtentsUnion;
+}
+
+void
+TileSource::setMap(const Map* map)
+{
+    _frame->setMap( map );
+}
+
+MapFrame&
+TileSource::getMapFrame() const
+{
+    return *_frame;
 }
 
 osg::Image*
@@ -481,6 +537,33 @@ TileSource::hasDataInExtent( const GeoExtent& extent ) const
     return intersects;
 }
 
+bool
+TileSource::hasDataAt( const GeoPoint& location, bool exact) const
+{
+    // If the location is invalid then return false
+    if (!location.isValid())
+        return false;
+
+    // If no data extents are provided, just return true
+    if (_dataExtents.size() == 0)
+        return true;
+
+    if (!exact)
+    {
+        return getDataExtentsUnion().contains(location);
+    }
+   
+
+    for (DataExtentList::const_iterator itr = _dataExtents.begin(); itr != _dataExtents.end(); ++itr)
+    {
+        if (itr->contains( location ) )
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 
 bool
 TileSource::hasData(const osgEarth::TileKey& key) const
@@ -529,6 +612,77 @@ TileSource::hasData(const osgEarth::TileKey& key) const
     }
 
     return intersectsData;
+}
+
+bool
+TileSource::getBestAvailableTileKey(const osgEarth::TileKey& key,
+                                    osgEarth::TileKey&       output) const
+{
+    // trivial accept: no data extents = not enough info.
+    if (_dataExtents.size() == 0)
+    {
+        output = key;
+        return true;
+    }
+
+    // trivial reject: key doesn't intersect the union of data extents at all.
+    if ( !getDataExtentsUnion().intersects(key.getExtent()) )
+    {
+        return false;
+    }
+
+    bool     intersects = false;
+    unsigned highestLOD = 0;
+
+    // We must use the equivalent lod b/c the key can be in any profile.
+    int layerLOD = getProfile()->getEquivalentLOD( key.getProfile(), key.getLOD() );
+    
+    for (DataExtentList::const_iterator itr = _dataExtents.begin(); itr != _dataExtents.end(); ++itr)
+    {
+        // check for 2D intersection:
+        if (key.getExtent().intersects( *itr ))
+        {
+            // check that the extent isn't higher-resolution than our key:
+            if ( !itr->minLevel().isSet() || layerLOD >= itr->minLevel().get() )
+            {
+                // Got an intersetion; now test the LODs:
+                intersects = true;
+                
+                // Is the high-LOD set? If not, there's not enough information
+                // so just assume our key might be good.
+                if ( itr->maxLevel().isSet() == false )
+                {
+                    output = key;
+                    return true;
+                }
+
+                // Is our key at a lower or equal LOD than the max key in this extent?
+                // If so, our key is good.
+                else if ( layerLOD <= itr->maxLevel().get() )
+                {
+                    output = key;
+                    return true;
+                }
+
+                // otherwise, record the highest encountered LOD that
+                // intersects our key.
+                else if ( itr->maxLevel().get() > highestLOD )
+                {
+                    highestLOD = itr->maxLevel().get();
+                }
+            }
+        }
+    }
+
+    if ( intersects )
+    {
+        output = key.createAncestorKey( highestLOD );
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
 
 bool
@@ -597,6 +751,8 @@ TileSourceFactory::create(const TileSourceOptions& options)
     {
         OE_WARN << LC << "Failed to load TileSource driver \"" << driver << "\"" << std::endl;
     }
+
+    OE_DEBUG << LC << "Tile source Profile = " << (result->getProfile() ? result->getProfile()->toString() : "NULL") << std::endl;
 
     // apply an Override Profile if provided.
     if ( result && options.profile().isSet() )

@@ -1,6 +1,6 @@
 /* -*-c++-*- */
 /* osgEarth - Dynamic map generation toolkit for OpenSceneGraph
-* Copyright 2008-2014 Pelican Mapping
+* Copyright 2015 Pelican Mapping
 * http://osgearth.org
 *
 * osgEarth is free software; you can redistribute it and/or modify
@@ -8,10 +8,13 @@
 * the Free Software Foundation; either version 2 of the License, or
 * (at your option) any later version.
 *
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU Lesser General Public License for more details.
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+* IN THE SOFTWARE.
 *
 * You should have received a copy of the GNU Lesser General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>
@@ -72,15 +75,9 @@ OrthoNode::init()
 
     _matxform = new osg::MatrixTransform();
     _switch->addChild( _matxform );
-
-#ifdef TRY_OQ
-    oq->_xform = _matxform;
-#endif
-
     _switch->setSingleChildOn( 0 );
 
     _attachPoint = new osg::Group();
-
     _autoxform->addChild( _attachPoint );
     _matxform->addChild( _attachPoint );
 
@@ -90,7 +87,15 @@ OrthoNode::init()
     _horizonCuller = new HorizonCullCallback();
     setHorizonCulling( _horizonCullingRequested );
 
-    _attachPoint->addCullCallback( _horizonCuller.get() );        
+    _attachPoint->addCullCallback( _horizonCuller.get() );
+}
+
+osg::BoundingSphere
+OrthoNode::computeBound() const
+{
+    osg::BoundingSphere bs = PositionedAnnotationNode::computeBound();
+    //OE_NOTICE << "BOUND RADIUS = " << bs.radius() << "\n";
+    return bs;
 }
 
 void
@@ -117,13 +122,14 @@ OrthoNode::traverse( osg::NodeVisitor& nv )
         // If decluttering is enabled, update the auto-transform but not its children.
         // This is necessary to support picking/selection. An optimization would be to
         // disable this pass when picking is not in use
-        if ( declutter )
-        {
-            static_cast<AnnotationUtils::OrthoNodeAutoTransform*>(_autoxform)->acceptCullNoTraverse( cv );
-        }
+        //if ( !declutter )
+        //{
+        //    static_cast<AnnotationUtils::OrthoNodeAutoTransform*>(_autoxform)->accept( nv, false );
+        //}
 
         // turn off small feature culling
-        cv->setSmallFeatureCullingPixelSize(0.0f);
+        // (note: pretty sure this does nothing here -gw)
+        cv->setSmallFeatureCullingPixelSize(-1.0f);
 
         AnnotationNode::traverse( nv );
 
@@ -152,14 +158,6 @@ OrthoNode::traverse( osg::NodeVisitor& nv )
     {
         AnnotationNode::traverse( nv );
     }
-}
-
-osg::BoundingSphere
-OrthoNode::computeBound() const
-{
-    osg::BoundingSphere bs = PositionedAnnotationNode::computeBound();
-    //bs.radius() = 1.0;
-    return bs;
 }
 
 void

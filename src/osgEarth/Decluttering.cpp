@@ -1,6 +1,6 @@
 /* -*-c++-*- */
 /* osgEarth - Dynamic map generation toolkit for OpenSceneGraph
-* Copyright 2008-2014 Pelican Mapping
+* Copyright 2015 Pelican Mapping
 * http://osgearth.org
 *
 * osgEarth is free software; you can redistribute it and/or modify
@@ -8,16 +8,20 @@
 * the Free Software Foundation; either version 2 of the License, or
 * (at your option) any later version.
 *
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU Lesser General Public License for more details.
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+* IN THE SOFTWARE.
 *
 * You should have received a copy of the GNU Lesser General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>
 */
 #include <osgEarth/Decluttering>
 #include <osgEarth/ThreadingUtils>
+#include <osgEarth/Containers>
 #include <osgEarth/Utils>
 #include <osgEarth/VirtualProgram>
 #include <osgUtil/RenderBin>
@@ -106,7 +110,7 @@ namespace
 
     static bool s_enabledGlobally = true;
 
-    static char* s_faderFS =
+    static const char* s_faderFS =
         "#version " GLSL_VERSION_STR "\n"
         GLSL_DEFAULT_PRECISION_FLOAT "\n"
         "uniform float " FADE_UNIFORM_NAME ";\n"
@@ -165,7 +169,7 @@ struct /*internal*/ DeclutterSort : public osgUtil::RenderBin::SortCallback
     DeclutterSortFunctor* _customSortFunctor;
     DeclutterContext*     _context;
 
-    Threading::PerObjectMap<osg::Camera*, PerCamInfo> _perCam;
+    PerObjectFastMap<osg::Camera*, PerCamInfo> _perCam;
 
     /**
      * Constructs the new sorter.
@@ -223,9 +227,28 @@ struct /*internal*/ DeclutterSort : public osgUtil::RenderBin::SortCallback
         local._failed.clear();          // drawables that fail occlusion test
         local._used.clear();            // list of occupied bounding boxes in screen space
 
-        // compute a window matrix so we can do window-space culling:
+        // compute a window matrix so we can do window-space culling. If this is an RTT camera
+        // with a reference camera attachment, we actually want to declutter in the window-space
+        // of the reference camera.
         const osg::Viewport* vp = cam->getViewport();
+
         osg::Matrix windowMatrix = vp->computeWindowMatrix();
+
+        osg::Vec3f  refCamScale(1.0f, 1.0f, 1.0f);
+        osg::Matrix refCamScaleMat;
+        osg::Matrix refWindowMatrix = windowMatrix;
+
+        if ( cam->isRenderToTextureCamera() )
+        {
+            osg::Camera* refCam = dynamic_cast<osg::Camera*>(cam->getUserData());
+            if ( refCam )
+            {
+                const osg::Viewport* refVP = refCam->getViewport();
+                refCamScale.set( vp->width() / refVP->width(), vp->height() / refVP->height(), 1.0 );
+                refCamScaleMat.makeScale( refCamScale );
+                refWindowMatrix = refVP->computeWindowMatrix();
+            }
+        }
 
         // Track the parent nodes of drawables that are obscured (and culled). Drawables
         // with the same parent node (typically a Geode) are considered to be grouped and
@@ -251,10 +274,19 @@ struct /*internal*/ DeclutterSort : public osgUtil::RenderBin::SortCallback
             osg::BoundingBox box = Utils::getBoundingBox(drawable);
 
             static osg::Vec4d s_zero_w(0,0,0,1);
-            osg::Vec4d clip = s_zero_w * (*leaf->_modelview.get()) * (*leaf->_projection.get());
+            osg::Matrix MVP = (*leaf->_modelview.get()) * (*leaf->_projection.get());
+            osg::Vec4d clip = s_zero_w * MVP;
             osg::Vec3d clip_ndc( clip.x()/clip.w(), clip.y()/clip.w(), clip.z()/clip.w() );
             osg::Vec3f winPos = clip_ndc * windowMatrix;
+
+            // this accounts for the size difference when using a reference camera (RTT/picking)
+            box.xMin() *= refCamScale.x();
+            box.xMax() *= refCamScale.x();
+            box.yMin() *= refCamScale.y();
+            box.yMax() *= refCamScale.y();
+
             osg::Vec2f offset( -box.xMin(), -box.yMin() );
+
             box.set(
                 winPos.x() + box.xMin(),
                 winPos.y() + box.yMin(),
@@ -299,6 +331,7 @@ struct /*internal*/ DeclutterSort : public osgUtil::RenderBin::SortCallback
             {
                 // passed the test, so add the leaf's bbox to the "used" list, and add the leaf
                 // to the final draw list.
+                //local._used.push_back( std::make_pair(drawableParent, box) );
                 local._used.push_back( std::make_pair(drawableParent, box) );
                 local._passed.push_back( leaf );
             }
@@ -315,7 +348,7 @@ struct /*internal*/ DeclutterSort : public osgUtil::RenderBin::SortCallback
             // projection when it's drawn later. We'll also preserve the scale.
             osg::Matrix newModelView;
             newModelView.makeTranslate( box.xMin() + offset.x(), box.yMin() + offset.y(), 0 );
-            newModelView.preMultScale( leaf->_modelview->getScale() );
+            newModelView.preMultScale( leaf->_modelview->getScale() * refCamScaleMat );
             
             // Leaf modelview matrixes are shared (by objects in the traversal stack) so we 
             // cannot just replace it unfortunately. Have to make a new one. Perhaps a nice
@@ -421,9 +454,9 @@ struct /*internal*/ DeclutterSort : public osgUtil::RenderBin::SortCallback
  */
 struct DeclutterDraw : public osgUtil::RenderBin::DrawCallback
 {
-    DeclutterContext*                                    _context;
-    Threading::PerThread< osg::ref_ptr<osg::RefMatrix> > _ortho2D;
-    osg::ref_ptr<osg::Uniform> _fade;
+    DeclutterContext*                         _context;
+    PerThread< osg::ref_ptr<osg::RefMatrix> > _ortho2D;
+    osg::ref_ptr<osg::Uniform>                _fade;
 
     /**
      * Constructs the decluttering draw callback.
@@ -587,8 +620,7 @@ public:
 
         // set up a VP to do fading.
         VirtualProgram* vp = VirtualProgram::getOrCreate(stateSet);
-        vp->setFunction( "oe_declutter_apply_fade", s_faderFS, ShaderComp::LOCATION_FRAGMENT_COLORING );
-        //stateSet->setAttributeAndModes(vp, 1);
+        vp->setFunction( "oe_declutter_apply_fade", s_faderFS, ShaderComp::LOCATION_FRAGMENT_COLORING, 0.5f );
     }
 
     void setSortingFunctor( DeclutterSortFunctor* f )

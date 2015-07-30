@@ -1,6 +1,6 @@
 /* -*-c++-*- */
 /* osgEarth - Dynamic map generation toolkit for OpenSceneGraph
- * Copyright 2008-2014 Pelican Mapping
+ * Copyright 2015 Pelican Mapping
  * http://osgearth.org
  *
  * osgEarth is free software; you can redistribute it and/or modify
@@ -782,15 +782,10 @@ RangeUniformCullCallback::operator()(osg::Node* node, osg::NodeVisitor* nv)
 
 //------------------------------------------------------------------------
 
-namespace
-{
-    
-}
-
 void
 DiscardAlphaFragments::install(osg::StateSet* ss, float minAlpha) const
 {
-    if ( ss && minAlpha < 1.0f )
+    if ( ss && minAlpha < 1.0f && Registry::capabilities().supportsGLSL() )
     {
         VirtualProgram* vp = VirtualProgram::getOrCreate(ss);
         if ( vp )
@@ -805,7 +800,7 @@ DiscardAlphaFragments::install(osg::StateSet* ss, float minAlpha) const
                 "oe_discardalpha_frag",
                 code,
                 ShaderComp::LOCATION_FRAGMENT_COLORING,
-                0L, 2.0f);
+                0L, 0.95f);
         }
     }
 }

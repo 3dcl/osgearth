@@ -1,6 +1,6 @@
 /* -*-c++-*- */
 /* osgEarth - Dynamic map generation toolkit for OpenSceneGraph
- * Copyright 2008-2014 Pelican Mapping
+ * Copyright 2015 Pelican Mapping
  * http://osgearth.org
  *
  * osgEarth is free software; you can redistribute it and/or modify
@@ -246,7 +246,7 @@ ShaderFactory::createFragmentShaderMain(const FunctionLocationMap& functions) co
         "void main(void) \n"
         "{ \n"
         INDENT "vec4 color = osg_FrontColor; \n"
-        INDENT "oe_global_Normal = oe_Normal; \n";
+        INDENT "oe_global_Normal = normalize(oe_Normal); \n";
 
     int coloringPass = _fragStageOrder == FRAGMENT_STAGE_ORDER_COLORING_LIGHTING ? 0 : 1;
     int lightingPass = 1-coloringPass;

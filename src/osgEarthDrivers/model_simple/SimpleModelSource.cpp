@@ -1,6 +1,6 @@
 /* -*-c++-*- */
 /* osgEarth - Dynamic map generation toolkit for OpenSceneGraph
- * Copyright 2008-2014 Pelican Mapping
+ * Copyright 2015 Pelican Mapping
  * http://osgearth.org
  *
  * osgEarth is free software; you can redistribute it and/or modify
@@ -205,9 +205,14 @@ public:
         }
 
         if ( _options.minRange().isSet() || _options.maxRange().isSet() )
-        {                
-            float minRange = _options.minRange().isSet() ? (*_options.minRange()) : 0.0f;
-            float maxRange = _options.maxRange().isSet() ? (*_options.maxRange()) : FLT_MAX;
+        {
+            #ifdef OSG_USE_FLOAT_BOUNDINGSPHERE
+                float minRange = _options.minRange().isSet() ? (*_options.minRange()) : 0.0f;
+                float maxRange = _options.maxRange().isSet() ? (*_options.maxRange()) : FLT_MAX;
+            #else
+                double minRange = _options.minRange().isSet() ? (*_options.minRange()) : 0.0f;
+                double maxRange = _options.maxRange().isSet() ? (*_options.maxRange()) : FLT_MAX;
+            #endif
 
             osg::LOD* lod = 0;
 
