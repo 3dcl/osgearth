@@ -19,6 +19,11 @@
 * You should have received a copy of the GNU Lesser General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>
 */
+
+// vt
+#include <vt/VirtualTextureManagerInterface.h>
+#include <vt/VirtualTexture.h>
+
 #include "VTTerrainEngineNode"
 #include "SingleKeyNodeFactory"
 #include "TerrainNode"
@@ -26,6 +31,7 @@
 #include "TileModelCompiler"
 #include "TilePagedLOD"
 #include "VTShaders"
+#include "TerrainLayerTileStore"
 
 #include <osgEarth/HeightFieldUtils>
 #include <osgEarth/ImageUtils>
@@ -48,6 +54,9 @@
 #include <osgDB/DatabasePager>
 #include <osgUtil/RenderBin>
 #include <osgUtil/RenderLeaf>
+
+// vt
+#include <vt/Configuration.h>
 
 #define LC "[VTTerrainEngineNode] "
 
@@ -204,7 +213,8 @@ _secondaryUnit        ( -1 ),
 _elevationTextureUnit ( -1 ),
 _batchUpdateInProgress( false ),
 _refreshRequired      ( false ),
-_stateUpdateRequired  ( false )
+_stateUpdateRequired  ( false ),
+_vtManager( 0L )
 {
     // unique ID for this engine:
     _uid = Registry::instance()->createUID();
@@ -226,6 +236,16 @@ _stateUpdateRequired  ( false )
 
     // install an elevation callback so we can update elevation data
     _elevationCallback = new ElevationChangedCallback( this );
+
+    // create virtual texture manager
+    vt::Configuration vtConfig;
+    vtConfig.internalTileFormat = vt::Tile::kFormatRaw;
+    vtConfig.internalTileSize = 256;
+    vtConfig.internalTileBorder = 0;
+    vtConfig.physicalTextureSize = 16384;
+    vtConfig.physicalTextureLayers = 4;
+
+    _vtManager = vt::VirtualTextureManagerInterface::createVirtualTextureManager(vtConfig);
 }
 
 VTTerrainEngineNode::~VTTerrainEngineNode()
@@ -239,6 +259,8 @@ VTTerrainEngineNode::~VTTerrainEngineNode()
     {
         delete _update_mapf;
     }
+
+    delete _vtManager;
 }
 
 void
@@ -776,36 +798,41 @@ VTTerrainEngineNode::addImageLayer( ImageLayer* layerAdded )
 {
     if ( layerAdded && layerAdded->getEnabled() )
     {
-        // for a shared layer, allocate a shared image unit if necessary.
-        if ( layerAdded->isShared() )
-        {
-            optional<int>& unit = layerAdded->shareImageUnit();
-            if ( !unit.isSet() )
-            {
-                int temp;
-                if ( getResources()->reserveTextureImageUnit(temp, "VT Engine Shared Layer") )
-                {
-                    unit = temp;
-                    OE_INFO << LC << "Image unit " << temp << " assigned to shared layer " << layerAdded->getName() << std::endl;
-                }
-                else
-                {
-                    OE_WARN << LC << "Insufficient GPU image units to share layer " << layerAdded->getName() << std::endl;
-                }
-            }
-
-            optional<std::string>& texUniformName = layerAdded->shareTexUniformName();
-            if ( !texUniformName.isSet() )
-            {
-                texUniformName = Stringify() << "oe_layer_" << layerAdded->getUID() << "_tex";
-            }
-
-            optional<std::string>& texMatUniformName = layerAdded->shareTexMatUniformName();
-            if ( !texMatUniformName.isSet() )
-            {
-                texMatUniformName = Stringify() << "oe_layer_" << layerAdded->getUID() << "_texmat";
-            }
+        // create virtual texture per ImageLayer
+        if (_virtualTextures.find(layerAdded) == _virtualTextures.end()) {
+            _virtualTextures[layerAdded] = _vtManager->createVirtualTexture(std::make_shared<TerrainLayerTileStore>(getMap()->getProfile(), layerAdded));
         }
+
+        // for a shared layer, allocate a shared image unit if necessary.
+//        if ( layerAdded->isShared() )
+//        {
+//            optional<int>& unit = layerAdded->shareImageUnit();
+//            if ( !unit.isSet() )
+//            {
+//                int temp;
+//                if ( getResources()->reserveTextureImageUnit(temp, "VT Engine Shared Layer") )
+//                {
+//                    unit = temp;
+//                    OE_INFO << LC << "Image unit " << temp << " assigned to shared layer " << layerAdded->getName() << std::endl;
+//                }
+//                else
+//                {
+//                    OE_WARN << LC << "Insufficient GPU image units to share layer " << layerAdded->getName() << std::endl;
+//                }
+//            }
+
+//            optional<std::string>& texUniformName = layerAdded->shareTexUniformName();
+//            if ( !texUniformName.isSet() )
+//            {
+//                texUniformName = Stringify() << "oe_layer_" << layerAdded->getUID() << "_tex";
+//            }
+
+//            optional<std::string>& texMatUniformName = layerAdded->shareTexMatUniformName();
+//            if ( !texMatUniformName.isSet() )
+//            {
+//                texMatUniformName = Stringify() << "oe_layer_" << layerAdded->getUID() << "_texmat";
+//            }
+//        }
     }
 
     refresh();

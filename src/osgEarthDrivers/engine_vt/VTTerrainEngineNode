@@ -19,6 +19,9 @@
 #ifndef OSGEARTH_DRIVERS_VT_TERRAIN_ENGINE_ENGINE_NODE_H
 #define OSGEARTH_DRIVERS_VT_TERRAIN_ENGINE_ENGINE_NODE_H 1
 
+#include <map>
+#include <memory>
+
 #include <osgEarth/TerrainEngineNode>
 #include <osgEarth/TextureCompositor>
 #include <osgEarth/Map>
@@ -36,6 +39,11 @@
 #include <osg/NodeCallback>
 #include <osg/Uniform>
 #include <osgUtil/RenderBin>
+
+namespace vt {
+    class VirtualTextureManagerInterface;
+    class VirtualTexture;
+}
 
 using namespace osgEarth;
 
@@ -174,6 +182,9 @@ namespace osgEarth { namespace Drivers { namespace VTTerrainEngine
         Threading::Mutex _renderBinMutex;
         osg::ref_ptr<osgUtil::RenderBin> _terrainRenderBinPrototype;
         osg::ref_ptr<osgUtil::RenderBin> _payloadRenderBinPrototype;
+
+        vt::VirtualTextureManagerInterface* _vtManager;
+        std::map<const ImageLayer*, std::shared_ptr<vt::VirtualTexture> > _virtualTextures;
 
         VTTerrainEngineNode( const VTTerrainEngineNode& rhs, const osg::CopyOp& op =osg::CopyOp::DEEP_COPY_ALL ) { }
     };

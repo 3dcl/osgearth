@@ -7,7 +7,10 @@ INCLUDE_DIRECTORIES(
     ${VT_INCLUDE_DIR}
 )
 
-SET(TARGET_COMMON_LIBRARIES ${TARGET_COMMON_LIBRARIES} ${VT_LIBRARIES} osgEarthSymbology)
+SET(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-std=c++11")
+
+SET(TARGET_COMMON_LIBRARIES ${TARGET_COMMON_LIBRARIES} osgEarthSymbology)
+SET(TARGET_ADDED_LIBRARIES ${VT_LIBRARIES})
 
 set(TARGET_GLSL
     VTEngine.vert.model.glsl
@@ -39,6 +42,7 @@ SET(TARGET_SRC
     TileNodeRegistry.cpp
     TileModelFactory.cpp
     TilePagedLOD.cpp
+    TerrainLayerTileStore.cpp
     ${SHADERS_CPP}
 )
 
@@ -62,9 +66,12 @@ SET(TARGET_H
     TileNodeRegistry
     TileModelFactory
     TilePagedLOD
+    TerrainLayerTileStore
 )
 
 setup_plugin(osgearth_engine_vt)
+
+MESSAGE(INFO " VT: ${TARGET_COMMON_LIBRARIES}")
 
 # to install public driver includes:
 SET(LIB_NAME engine_vt)

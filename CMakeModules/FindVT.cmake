@@ -11,7 +11,7 @@ FIND_LIBRARY(VT_LIBRARY_DEBUG
 	NAMES
 		LibVTD.lib
 		vt_debug.lib
-        vt_debug
+                vt_debug
 	PATHS
         "$ENV{VT_DIR}"
 )
@@ -39,4 +39,5 @@ IF( VT_LIBRARY_RELEASE AND VT_INCLUDE_DIR )
         SET( VT_LIBRARIES ${VT_LIBRARY_RELEASE} )
         MESSAGE(WARNING "-- Warning Debug VT not found, using: ${VT_LIBRARY_RELEASE}")
     ENDIF(VT_LIBRARY_DEBUG)
+    MESSAGE(INFO "LibVT libraries: ${VT_LIBRARIES}")
 ENDIF( VT_LIBRARY_RELEASE AND VT_INCLUDE_DIR )

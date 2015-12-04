@@ -1,0 +1,97 @@
+#ifndef OSGEARTH_DRIVERS_VTTERRAINENGINE_TERRAINLAYERTILESTORE_H
+#define OSGEARTH_DRIVERS_VTTERRAINENGINE_TERRAINLAYERTILESTORE_H
+
+#include <cstdint>
+#include <vt/TileStore.h>
+
+#include <osgEarth/ImageLayer>
+
+namespace osgEarth { namespace Drivers { namespace VTTerrainEngine {
+
+class TerrainLayerTileStore : public vt::tilestore::TileStore
+{
+public:
+    TerrainLayerTileStore(const Profile* profile, osg::ref_ptr<ImageLayer> imageLayer);
+
+    /**
+     * @brief Initializes this store.
+     *
+     * @return true on success
+     *
+     * Subclasses should open the database file (for example) and perform sanity checks
+     * in this method rather than in the constructor, because the latter can't report failures.
+     */
+    bool initialize() override;
+
+    /**
+     * @brief Retrieves a tile from the store.
+     *
+     * @param pageId The id of the desired page as produced by the MAKE_PAGE_INFO macro in LibVT_Internal.h.
+     * @param offset For some configurations it might be necessary to skip the first bytes
+     *
+     * @return The raw tile data on success, nullptr otherwise. The caller is responsible for freeing the result.
+     */
+    std::shared_ptr<vt::Tile> getTile ( std::shared_ptr<vt::Tile> tile, const uint32_t offset = 0 ) override;
+
+    /**
+     * @brief Gets the page border size of the tiles in this store.
+     */
+    uint8_t getTileBorder() override;
+
+    /**
+     * @brief Gets the page size (dimension) of the tiles in this store.
+     */
+    uint16_t getTileSize() override;
+
+    /**
+     * @brief Gets the mip chain length of the tiles in this store.
+     */
+    uint8_t getMipChainLength() override;
+
+    /**
+     * @brief Gets the codec used of the tiles in this store.
+     */
+    vt::Tile::Format getTileFormat() override;
+
+    /**
+     * @brief Gets the compression used for tiles in this store
+     */
+    vt::Tile::Compression getTileCompression() override;
+
+    /**
+     * @brief Gets the name of this store.
+     */
+    const std::string& getName() override;
+
+    /**
+     * @brief Gets a description of the Store's source, i.e. the database file, etc.
+     */
+    const std::string& getSource() override;
+
+    /**
+     * @brief Gets the raw data for the lookup texture (formerly lookuptex.bin).
+     *
+     * @param sizePtr Out: the size in bytes of the data returned.
+     *
+     * @return The raw lookup texture data on success, nullptr otherwise. The caller is responsible for freeing the result.
+     */
+    std::vector<char> getLookupTexture() override;
+
+    /**
+     * @brief Gets the size of a side of the lookup texture in pixels (i.e. the width = height)
+     */
+    uint32_t getLookupTextureSideSize() override;
+protected:
+    osg::ref_ptr<ImageLayer> _imageLayer;
+    const Profile* _profile;
+    uint8_t  _tileBorder;
+    uint16_t _tileSize;
+    uint8_t _mipChainLength;
+    vt::Tile::Format      _format;
+};
+
+} // namespace VTTerrainEngine
+} // namespace Drivers
+} // namespace osgEarth
+
+#endif // OSGEARTH_DRIVERS_VTTERRAINENGINE_TERRAINLAYERTILESTORE_H
