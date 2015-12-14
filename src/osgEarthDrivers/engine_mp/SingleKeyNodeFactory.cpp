@@ -182,6 +182,7 @@ SingleKeyNodeFactory::createTile(TileModel*        model,
         plod->addChild   ( tileNode );
         plod->setFileName( 1, Stringify() << tileNode->getKey().str() << "." << _engineUID << ".osgearth_engine_mp_tile" );
         plod->setDebug   ( _debug );
+        plod->setSynchronousUpdate(_options.synchronousUpdate().value());
 
         if ( _options.rangeMode().value() == osg::LOD::DISTANCE_FROM_EYE_POINT )
         {

@@ -42,7 +42,8 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
             _tilePixelSize     ( 256 ),
             _color             ( Color::White ),
             _incrementalUpdate ( false ),
-            _smoothing         ( false )
+            _smoothing         ( false ),
+            _synchronousUpdate ( false )
          {
             setDriver( "mp" );
             fromConfig( _conf );
@@ -87,6 +88,12 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
         optional<bool>& elevationSmoothing() { return _smoothing; }
         const optional<bool>& elevationSmoothing() const { return _smoothing; }
 
+        /**
+         * Wheter to wait till all terrain data is loaded (very slow).
+         */
+        optional<bool>& synchronousUpdate() { return _synchronousUpdate; }
+        const optional<bool>& synchronousUpdate() const { return _synchronousUpdate; }
+
     public:
 
         /** @deprecated */
@@ -105,6 +112,7 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
             conf.updateIfSet( "color", _color );
             conf.updateIfSet( "incremental_update", _incrementalUpdate );
             conf.updateIfSet( "elevation_smoothing", _smoothing );
+            conf.updateIfSet( "synchronous_update", _synchronousUpdate );
 
             return conf;
         }
@@ -126,6 +134,7 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
             conf.getIfSet( "color", _color );
             conf.getIfSet( "incremental_update", _incrementalUpdate );
             conf.getIfSet( "elevation_smoothing", _smoothing );
+            conf.getIfSet( "synchronous_update", _synchronousUpdate );
        }
 
         optional<float>               _skirtRatio;
@@ -137,6 +146,7 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
         optional<Color>               _color;
         optional<bool>                _incrementalUpdate;
         optional<bool>                _smoothing;
+        optional<bool>                _synchronousUpdate;
     };
 
 } } } // namespace osgEarth::Drivers::MPTerrainEngine
