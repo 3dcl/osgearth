@@ -98,7 +98,6 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
         optional<osg::BoundingBox>       _bbox;
         bool                             _debug;
         bool                             _synchronousUpdate;
-        bool                             _isRegistred;
     };
 
 } } } // namespace osgEarth::Drivers::MPTerrainEngine

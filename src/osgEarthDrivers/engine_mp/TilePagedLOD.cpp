@@ -108,8 +108,7 @@ _engineUID          ( engineUID ),
 _live               ( live ),
 _dead               ( dead ),
 _debug              ( false ),
-_synchronousUpdate  ( false ),
-_isRegistred        ( false )
+_synchronousUpdate  ( false )
 {
     if ( live )
     {
@@ -357,15 +356,18 @@ TilePagedLOD::traverse(osg::NodeVisitor& nv)
                                 setTimeStamp(getNumChildren(), timeStamp);
                                 setFrameNumber(getNumChildren(), frameNumber);
                                 addChild(childNode);
-                                if (!_isRegistred)
+
+                                osgDB::DatabasePager* pager = dynamic_cast<osgDB::DatabasePager*>(nv.getDatabaseRequestHandler());
+                                if (pager)
                                 {
-                                    osgDB::DatabasePager* pager = dynamic_cast<osgDB::DatabasePager*>(nv.getDatabaseRequestHandler());
-                                    if (pager)
-                                    {
-                                        pager->registerPagedLODs(this, frameNumber);
+                                    pager->registerPagedLODs(this, frameNumber);
+
+                                    // do a fake request to ensure the database threads are started when synchronous update is used
+                                    if (!pager->isRunning()) {
+                                        pager->requestNodeFile(filePath, nv.getNodePath(), priority, nv.getFrameStamp(), _perRangeDataList[numChildren]._databaseRequest, _databaseOptions.get());
                                     }
-                                    _isRegistred = true;
                                 }
+
                                 _children[getNumChildren()-1]->accept(nv);
                             }
                         }
