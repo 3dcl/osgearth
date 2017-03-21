@@ -23,6 +23,8 @@
 #include "TileNodeRegistry"
 #include "MPTerrainEngineNode"
 #include <osg/Version>
+#include <osgDB/Options>
+#include <osgDB/DatabasePager>
 #include <osgEarth/Registry>
 #include <osgEarth/CullingUtils>
 #include <cassert>
@@ -110,10 +112,12 @@ TilePagedLOD::TilePagedLOD(const UID&        engineUID,
                            TileNodeRegistry* live,
                            ResourceReleaser* releaser) :
 osg::PagedLOD(),
-_engineUID( engineUID ),
-_live     ( live ),
+_engineUID          ( engineUID ),
+_live               ( live ),
 _releaser ( releaser ),
-_debug    ( false )
+_debug              ( false ),
+_synchronousUpdate  ( false ),
+_isRegistred        ( false )
 {
     if ( live )
     {
@@ -315,7 +319,7 @@ TilePagedLOD::traverse(osg::NodeVisitor& nv)
                 unsigned int numChildren = _children.size();
 
                 // select the last valid child.
-                if (numChildren>0 && ((int)numChildren-1)!=lastChildTraversed)
+                if (numChildren>0 && ((int)numChildren-1)!=lastChildTraversed && !_synchronousUpdate)
                 {
                     if (updateTimeStamp)
                     {
@@ -363,15 +367,41 @@ TilePagedLOD::traverse(osg::NodeVisitor& nv)
                         // modify the priority according to the child's priority offset and scale.
                         priority = _perRangeDataList[numChildren]._priorityOffset + priority * _perRangeDataList[numChildren]._priorityScale;
 
-                        if (_databasePath.empty())
+                        if (!_synchronousUpdate)
                         {
-                            nv.getDatabaseRequestHandler()->requestNodeFile(_perRangeDataList[numChildren]._filename,nv.getNodePath(),priority,nv.getFrameStamp(), _perRangeDataList[numChildren]._databaseRequest, _databaseOptions.get());
+                            // load asynchronous
+                            if (_databasePath.empty())
+                            {
+                                nv.getDatabaseRequestHandler()->requestNodeFile(_perRangeDataList[numChildren]._filename,nv.getNodePath(),priority,nv.getFrameStamp(), _perRangeDataList[numChildren]._databaseRequest, _databaseOptions.get());
+                            }
+                            else
+                            {
+                                // prepend the databasePath to the child's filename.
+                                nv.getDatabaseRequestHandler()->requestNodeFile(_databasePath+_perRangeDataList[numChildren]._filename,nv.getNodePath(),priority,nv.getFrameStamp(), _perRangeDataList[numChildren]._databaseRequest, _databaseOptions.get());
+                            }
+                        } else {
+                            // load data synchronous
+                            std::string filePath = _databasePath.empty() ? _perRangeDataList[numChildren]._filename : _databasePath+_perRangeDataList[numChildren]._filename;
+                            osg::ref_ptr<osg::Node> childNode = osgDB::readNodeFile(filePath, dynamic_cast<osgDB::Options*>(_databaseOptions.get()));
+
+                            if (childNode)
+                            {
+                                setTimeStamp(getNumChildren(), timeStamp);
+                                setFrameNumber(getNumChildren(), frameNumber);
+                                addChild(childNode);
+                                if (!_isRegistred)
+                                {
+                                    osgDB::DatabasePager* pager = dynamic_cast<osgDB::DatabasePager*>(nv.getDatabaseRequestHandler());
+                                    if (pager)
+                                    {
+                                        pager->registerPagedLODs(this, frameNumber);
+                                    }
+                                    _isRegistred = true;
+                                }
+                                _children[getNumChildren()-1]->accept(nv);
+                            }
                         }
-                        else
-                        {
-                            // prepend the databasePath to the child's filename.
-                            nv.getDatabaseRequestHandler()->requestNodeFile(_databasePath+_perRangeDataList[numChildren]._filename,nv.getNodePath(),priority,nv.getFrameStamp(), _perRangeDataList[numChildren]._databaseRequest, _databaseOptions.get());
-                        }
+
                     }
                 }
             }

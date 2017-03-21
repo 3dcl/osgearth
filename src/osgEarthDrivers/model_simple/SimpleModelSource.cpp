@@ -206,9 +206,14 @@ public:
         }
 
         if ( _options.minRange().isSet() || _options.maxRange().isSet() )
-        {                
-            float minRange = _options.minRange().isSet() ? (*_options.minRange()) : 0.0f;
-            float maxRange = _options.maxRange().isSet() ? (*_options.maxRange()) : FLT_MAX;
+        {
+            #ifdef OSG_USE_FLOAT_BOUNDINGSPHERE
+                float minRange = _options.minRange().isSet() ? (*_options.minRange()) : 0.0f;
+                float maxRange = _options.maxRange().isSet() ? (*_options.maxRange()) : FLT_MAX;
+            #else
+                double minRange = _options.minRange().isSet() ? (*_options.minRange()) : 0.0f;
+                double maxRange = _options.maxRange().isSet() ? (*_options.maxRange()) : FLT_MAX;
+            #endif
 
             osg::LOD* lod = 0;
 
@@ -231,7 +236,7 @@ public:
                     osg::Vec3d center = result->getBound().center();
                     OE_DEBUG << "Radius=" << result->getBound().radius() << " center=" << center.x() << "," << center.y() << "," << center.z() << std::endl;                    
                     plod->setCenter(result->getBound().center());
-                    plod->setRadius(std::max(result->getBound().radius(), maxRange));
+                    plod->setRadius(std::max<double>(result->getBound().radius(), maxRange));
                 }
                 lod = plod;
             }   

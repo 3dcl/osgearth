@@ -44,6 +44,7 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
             _incrementalUpdate ( false ),
             _smoothing         ( false ),
             _normalMaps        ( false ),
+            _synchronousUpdate ( false ),
             _adaptivePolarRangeFactor( false )
          {
             setDriver( "mp" );
@@ -94,6 +95,12 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
         const optional<bool>& normalMaps() const { return _normalMaps; }
 
         /**
+         * Wheter to wait till all terrain data is loaded (very slow).
+         */
+        optional<bool>& synchronousUpdate() { return _synchronousUpdate; }
+        const optional<bool>& synchronousUpdate() const { return _synchronousUpdate; }
+
+        /**
          * Whether to automatically adjust(reduce) the minTileRangeFactor with increase in
          * latitude. This prevents overtessellation in the polar regions. Only works with
          * a geocentric map. Defaults to false.
@@ -120,6 +127,7 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
             conf.updateIfSet( "incremental_update", _incrementalUpdate );
             conf.updateIfSet( "elevation_smoothing", _smoothing );
             conf.updateIfSet( "normal_maps", _normalMaps );
+            conf.updateIfSet( "synchronous_update", _synchronousUpdate );
             conf.updateIfSet( "adaptive_polar_range_factor", _adaptivePolarRangeFactor);
 
             return conf;
@@ -143,6 +151,7 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
             conf.getIfSet( "incremental_update", _incrementalUpdate );
             conf.getIfSet( "elevation_smoothing", _smoothing );
             conf.getIfSet( "normal_maps", _normalMaps );
+            conf.getIfSet( "synchronous_update", _synchronousUpdate );
             conf.getIfSet( "adaptive_polar_range_factor", _adaptivePolarRangeFactor);
        }
 
@@ -156,6 +165,7 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
         optional<bool>                _incrementalUpdate;
         optional<bool>                _smoothing;
         optional<bool>                _normalMaps;
+        optional<bool>                _synchronousUpdate;
         optional<bool>                _adaptivePolarRangeFactor;
     };
 

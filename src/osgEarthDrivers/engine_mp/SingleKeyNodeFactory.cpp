@@ -117,6 +117,7 @@ SingleKeyNodeFactory::createTile(TileModel*        model,
         plod->setCenter  ( bs.center() );
         plod->addChild   ( tileNode );
         plod->setFileName( 1, Stringify() << tileNode->getKey().str() << "." << _engine->getUID() << ".osgearth_engine_mp_tile" );
+        plod->setSynchronousUpdate(_options.synchronousUpdate().value());
         
         double rangeFactor = _options.minTileRangeFactor().get();
         if (_options.adaptivePolarRangeFactor() == true)

@@ -63,6 +63,8 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
 
         void setDebug(bool value) { _debug = value; }
 
+        void setSynchronousUpdate(bool value) { _synchronousUpdate = value; }
+
         void setRangeFactor(double f) { _rangeFactor = f; }
 
     public: // osg::Group
@@ -99,6 +101,8 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
         osg::ref_ptr<MyProgressCallback> _progress;
         optional<osg::BoundingBox>       _bbox;
         bool                             _debug;
+        bool                             _synchronousUpdate;
+        bool                             _isRegistred;
     };
 
 } } } // namespace osgEarth::Drivers::MPTerrainEngine
