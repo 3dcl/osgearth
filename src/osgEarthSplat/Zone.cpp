@@ -41,10 +41,10 @@ Zone::configure(const ConfigOptions& options, const Map* map, const osgDB::Optio
         
         GeoExtent extent(
             map->getSRS()->getGeographicSRS(),
-            osg::clampBetween(box.xMin(), -180.0f, 180.0f),
-            osg::clampBetween(box.yMin(),  -90.0f,  90.0f),
-            osg::clampBetween(box.xMax(), -180.0f, 180.0f),
-            osg::clampBetween(box.yMax(),  -90.0f,  90.0f));
+            osg::clampBetween(box.xMin(), (osg::BoundingBox::value_type)-180.0f, (osg::BoundingBox::value_type)180.0f),
+            osg::clampBetween(box.yMin(), (osg::BoundingBox::value_type)-90.0f,  (osg::BoundingBox::value_type)90.0f),
+            osg::clampBetween(box.xMax(), (osg::BoundingBox::value_type)-180.0f, (osg::BoundingBox::value_type)180.0f),
+            osg::clampBetween(box.yMax(), (osg::BoundingBox::value_type)-90.0f,  (osg::BoundingBox::value_type)90.0f));
 
         extent.createPolytope( b.tope );
         b.zmin2 = box.zMin() > -FLT_MAX ? box.zMin()*box.zMin() : box.zMin();

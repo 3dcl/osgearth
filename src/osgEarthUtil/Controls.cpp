@@ -703,7 +703,7 @@ namespace
     {
         LabelText() : osgText::Text() { setDataVariance(osg::Object::DYNAMIC); }
         const osg::BoundingBox& getTextBB() const { return _textBB; }
-        const osg::Matrix& getATMatrix(int contextID) const { return _autoTransformCache[contextID]._matrix; }
+        const osg::Matrix& getATMatrix(int contextID) const { return _matrix; }
     };
 
     // writes a value to a label
