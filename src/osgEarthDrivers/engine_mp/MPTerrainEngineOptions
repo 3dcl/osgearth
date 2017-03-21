@@ -22,6 +22,7 @@
 #include <osgEarth/Common>
 #include <osgEarth/TerrainOptions>
 #include <osgEarthSymbology/Color>
+#include <osg/LOD>
 
 namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
 {
@@ -37,7 +38,7 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
         MPTerrainEngineOptions( const ConfigOptions& options =ConfigOptions() ) : TerrainOptions( options ),
             _skirtRatio        ( 0.05 ),
             _quickRelease      ( true ),
-            _normalizeEdges    ( false ),
+            _normalizeEdges    ( true ),
             _rangeMode         ( osg::LOD::DISTANCE_FROM_EYE_POINT ),
             _tilePixelSize     ( 256 ),
             _color             ( Color::White ),
@@ -45,7 +46,7 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
             _smoothing         ( false ),
             _normalMaps        ( false ),
             _synchronousUpdate ( false ),
-            _adaptivePolarRangeFactor( false )
+            _adaptivePolarRangeFactor( true )
          {
             setDriver( "mp" );
             fromConfig( _conf );

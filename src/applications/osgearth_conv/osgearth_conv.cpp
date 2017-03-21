@@ -26,9 +26,13 @@
 #include <osgEarth/TileSource>
 #include <osgEarth/TileHandler>
 #include <osgEarth/TileVisitor>
+#include <osgEarth/ImageLayer>
+#include <osgEarth/ElevationLayer>
 #include <osg/ArgumentParser>
 #include <osg/Timer>
 #include <iomanip>
+#include <algorithm>
+#include <iterator>
 
 using namespace osgEarth;
 
@@ -47,7 +51,7 @@ int usage(char** argv)
         << "\n    --osg-options [OSG options string]  : options to pass to OSG readers/writers"
         << "\n    --extents [minLat] [minLong] [maxLat] [maxLong] : Lat/Long extends to copy"
         << std::endl;
-        
+
     return 0;
 }
 
@@ -78,10 +82,10 @@ struct TileSourceToTileSource : public TileHandler
         }
         return ok;
     }
-    
+
     bool hasData(const TileKey& key) const
     {
-        return _source->hasData(key);
+        return _source->hasDataInExtent(key.getExtent());
     }
 
     TileSource* _source;
@@ -106,14 +110,14 @@ struct ImageLayerToTileSource : public TileHandler
         bool ok = false;
         GeoImage image = _source->createImage(key);
         if (image.valid())
-            ok = _dest->storeImage(key, image.getImage(), 0L);        
+            ok = _dest->storeImage(key, image.getImage(), 0L);
 
         return ok;
     }
-    
+
     bool hasData(const TileKey& key) const
     {
-        return _source->getTileSource()->hasData(key);
+        return _source->getTileSource()->hasDataInExtent(key.getExtent());
     }
 
     osg::ref_ptr<ImageLayer> _source;
@@ -140,10 +144,10 @@ struct ElevationLayerToTileSource : public TileHandler
             ok = _dest->storeHeightField(key, hf.getHeightField(), 0L);
         return ok;
     }
-    
+
     bool hasData(const TileKey& key) const
     {
-        return _source->getTileSource()->hasData(key);
+        return _source->getTileSource()->hasDataInExtent(key.getExtent());
     }
 
     osg::ref_ptr<ElevationLayer> _source;
@@ -154,8 +158,8 @@ struct ElevationLayerToTileSource : public TileHandler
 // Custom progress reporter
 struct ProgressReporter : public osgEarth::ProgressCallback
 {
-    bool reportProgress(double             current, 
-                        double             total, 
+    bool reportProgress(double             current,
+                        double             total,
                         unsigned           currentStage,
                         unsigned           totalStages,
                         const std::string& msg )
@@ -163,9 +167,9 @@ struct ProgressReporter : public osgEarth::ProgressCallback
         _mutex.lock();
 
         float percentage = current/total*100.0f;
-        std::cout 
+        std::cout
             << std::fixed
-            << std::setprecision(1) << "\r" 
+            << std::setprecision(1) << "\r"
             << (int)current << "/" << (int)total
             << " (" << percentage << "%)"
             << "                        "
@@ -235,7 +239,7 @@ main(int argc, char** argv)
         inConf.set(key, value);
 
     osg::ref_ptr<osgDB::Options> dbo = new osgDB::Options();
-    
+
     // plugin options, if the user passed them in:
     std::string str;
     while(args.read("--osg-options", str) || args.read("-O", str))
@@ -297,6 +301,18 @@ main(int argc, char** argv)
     {
         OE_WARN << LC << "Failed to open output" << std::endl;
         return -1;
+    }
+
+    // Copy over the data extents to the output datasource.
+    for (DataExtentList::const_iterator itr = input->getDataExtents().begin(); itr != input->getDataExtents().end(); ++itr)
+    {
+        // Convert the data extent to the profile that is actually used by the output tile source
+        DataExtent dataExtent = *itr;
+        GeoExtent ext = dataExtent.transform(outputProfile->getSRS());
+        unsigned int minLevel = 0;
+        unsigned int maxLevel = outputProfile->getEquivalentLOD( input->getProfile(), *dataExtent.maxLevel() );
+        DataExtent outputExtent = DataExtent(ext, minLevel, maxLevel);
+        output->getDataExtents().push_back( outputExtent );
     }
 
     Status outputStatus = output->open(
@@ -376,7 +392,7 @@ main(int argc, char** argv)
             visitor->setTileHandler( new ImageLayerToTileSource(layer, output.get()) );
         }
     }
-    
+
     // Set the level limits:
     unsigned minLevel = ~0;
     bool minLevelSet = args.read("--min-level", minLevel);
@@ -397,7 +413,7 @@ main(int argc, char** argv)
                 minLevel = i->minLevel().value();
         }
     }
-       
+
     if ( minLevel < ~0 )
     {
         visitor->setMinLevel( minLevel );
@@ -430,7 +446,7 @@ main(int argc, char** argv)
     osg::Timer_t t1 = osg::Timer::instance()->tick();
 
     std::cout
-        << "Time = " 
+        << "Time = "
         << std::fixed
         << std::setprecision(1)
         << osg::Timer::instance()->delta_s(t0, t1)

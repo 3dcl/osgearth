@@ -218,8 +218,6 @@ _status ( Status::Error("Not initialized") ),
 _mode   ( 0 ),
 _openCalled( false )
 {
-    this->setThreadSafeRefUnref( true );
-
     // Initialize the l2 cache size to the options.
     int l2CacheSize = *options.L2CacheSize();
 
@@ -363,7 +361,6 @@ TileSource::createImage(const TileKey&        key,
 
     if ( newImage.valid() && _memCache.valid() )
     {
-        // cache it to the memory cache.
         _memCache->getOrCreateDefaultBin()->write(key.str(), newImage.get(), 0L);
     }
 
@@ -383,7 +380,9 @@ TileSource::createHeightField(const TileKey&        key,
     {
         ReadResult r = _memCache->getOrCreateDefaultBin()->readObject(key.str(), 0L);
         if ( r.succeeded() )
+        {
             return r.release<osg::HeightField>();
+        }
     }
 
     osg::ref_ptr<osg::HeightField> newHF = createHeightField( key, progress );
@@ -396,8 +395,7 @@ TileSource::createHeightField(const TileKey&        key,
         _memCache->getOrCreateDefaultBin()->write(key.str(), newHF.get(), 0L);
     }
 
-    //TODO: why not just newHF.release()? -gw
-    return newHF.valid() ? new osg::HeightField( *newHF.get() ) : 0L;
+    return newHF.release();
 }
 
 osg::Image*
@@ -597,10 +595,16 @@ TileSource::getBestAvailableTileKey(const osgEarth::TileKey& key,
     if ( !key.valid() )
         return false;
 
+
+    const optional<unsigned>& MDL = getOptions().maxDataLevel();
+
     // trivial accept: no data extents = not enough info.
     if (_dataExtents.size() == 0)
     {
-        output = key;
+        if (MDL.isSet() && key.getLOD() > MDL.get())
+            output = key.createAncestorKey(MDL.get());
+        else
+            output = key;
         return true;
     }
 
@@ -626,12 +630,15 @@ TileSource::getBestAvailableTileKey(const osgEarth::TileKey& key,
             {
                 // Got an intersetion; now test the LODs:
                 intersects = true;
-                
+
                 // Is the high-LOD set? If not, there's not enough information
                 // so just assume our key might be good.
                 if ( itr->maxLevel().isSet() == false )
                 {
-                    output = key;
+                    if (MDL.isSet() && layerLOD > MDL.get())
+                        output = key.createAncestorKey(MDL.get());
+                    else
+                        output = key;
                     return true;
                 }
 
@@ -639,7 +646,10 @@ TileSource::getBestAvailableTileKey(const osgEarth::TileKey& key,
                 // If so, our key is good.
                 else if ( layerLOD <= (int)itr->maxLevel().get() )
                 {
-                    output = key;
+                    if (MDL.isSet() && layerLOD > MDL.get())
+                        output = key.createAncestorKey(MDL.get());
+                    else
+                        output = key;
                     return true;
                 }
 
@@ -655,6 +665,9 @@ TileSource::getBestAvailableTileKey(const osgEarth::TileKey& key,
 
     if ( intersects )
     {
+        if (MDL.isSet() && highestLOD > MDL.get())
+            highestLOD = MDL.get();
+
         output = key.createAncestorKey( highestLOD );
         return true;
     }

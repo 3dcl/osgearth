@@ -23,6 +23,9 @@
 #include <osgEarth/CacheSeed>
 #include <osgEarth/CacheEstimator>
 #include <osgEarth/MapFrame>
+#include <osgEarth/Map>
+#include <osgEarth/ImageLayer>
+#include <osgEarth/ElevationLayer>
 #include <OpenThreads/ScopedLock>
 #include <limits.h>
 
@@ -31,7 +34,7 @@
 using namespace osgEarth;
 using namespace OpenThreads;
 
-CacheTileHandler::CacheTileHandler( TerrainLayer* layer, Map* map ):
+CacheTileHandler::CacheTileHandler( TerrainLayer* layer, const Map* map ):
 _layer( layer ),
 _map( map )
 {
@@ -53,7 +56,7 @@ bool CacheTileHandler::handleTile(const TileKey& key, const TileVisitor& tv)
     }
     else if (elevationLayer )
     {
-        GeoHeightField hf = elevationLayer->createHeightField( key );
+        GeoHeightField hf = elevationLayer->createHeightField(key, 0L);
         if (hf.valid())
         {                
             return true;
@@ -82,31 +85,21 @@ bool CacheTileHandler::hasData( const TileKey& key ) const
 
 std::string CacheTileHandler::getProcessString() const
 {
+    std::stringstream buf;
     ImageLayer* imageLayer = dynamic_cast< ImageLayer* >( _layer.get() );
     ElevationLayer* elevationLayer = dynamic_cast< ElevationLayer* >( _layer.get() );    
 
-    std::stringstream buf;
-    buf << "osgearth_cache --seed ";
-    if (imageLayer)
-    {        
-        for (int i = 0; i < _map->getNumImageLayers(); i++)
-        {
-            if (imageLayer == _map->getImageLayerAt(i))
-            {
-                buf << " --image " << i << " ";
-                break;
-            }
-        }
-    }
-    else if (elevationLayer)
+    unsigned index = _map->getIndexOfLayer(_layer.get());
+    if (index < _map->getNumLayers())
     {
-        for (int i = 0; i < _map->getNumElevationLayers(); i++)
+        buf << "osgearth_cache --seed ";
+        if (imageLayer)
         {
-            if (elevationLayer == _map->getElevationLayerAt(i))
-            {
-                buf << " --elevation " << i << " ";
-                break;
-            }
+            buf << " --image " << index << " ";
+        }
+        else if (elevationLayer)
+        {
+            buf << " --elevation " << index << " ";
         }
     }
     return buf.str();
@@ -131,7 +124,7 @@ void CacheSeed::setVisitor(TileVisitor* visitor)
     _visitor = visitor;
 }
 
-void CacheSeed::run( TerrainLayer* layer, Map* map )
+void CacheSeed::run( TerrainLayer* layer, const Map* map )
 {
     _visitor->setTileHandler( new CacheTileHandler( layer, map ) );
     _visitor->run( map->getProfile() );

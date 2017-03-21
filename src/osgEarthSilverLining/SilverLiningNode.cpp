@@ -26,7 +26,10 @@
 
 #include <osg/Light>
 #include <osg/LightSource>
+
 #include <osgEarth/CullingUtils>
+#include <osgEarth/Lighting>
+#include <osgEarth/NodeUtils>
 
 #undef  LC
 #define LC "[SilverLiningNode] "
@@ -41,8 +44,7 @@ _mapSRS(mapSRS),
 _callback(callback)
 {
     // Create a new Light for the Sun.
-    _light = new osg::Light();
-    _light->setLightNum( 0 );
+    _light = new LightGL3(0);
     _light->setDiffuse( osg::Vec4(1,1,1,1) );
     _light->setAmbient( osg::Vec4(0.2f, 0.2f, 0.2f, 1) );
     _light->setPosition( osg::Vec4(1, 0, 0, 0) ); // w=0 means infinity
@@ -51,11 +53,13 @@ _callback(callback)
     _lightSource = new osg::LightSource();
     _lightSource->setLight( _light.get() );
     _lightSource->setReferenceFrame(osg::LightSource::RELATIVE_RF);
+    GenerateGL3LightingUniforms generateLightingVisitor;
+    _lightSource->accept(generateLightingVisitor);
 
     // scene lighting
     osg::StateSet* stateset = this->getOrCreateStateSet();
     _lighting = new PhongLightingEffect();
-    _lighting->setCreateLightingUniform( false );
+    //_lighting->setCreateLightingUniform( false );
     _lighting->attach( stateset );
 
     // need update traversal.
@@ -73,8 +77,9 @@ void
 SilverLiningNode::attach(osg::View* view, int lightNum)
 {
     _light->setLightNum( lightNum );
-    view->setLight( _light.get() );
-    view->setLightingMode( osg::View::SKY_LIGHT );
+    //view->setLight( _light.get() );
+    //view->setLightingMode( osg::View::SKY_LIGHT );
+    view->setLightingMode(osg::View::NO_LIGHT);
 }
 
 unsigned

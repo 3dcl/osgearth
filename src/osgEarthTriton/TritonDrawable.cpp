@@ -16,10 +16,8 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#include <Triton.h>
-
-#include "TritonDrawable"
 #include "TritonContext"
+#include "TritonDrawable"
 #include <osg/MatrixTransform>
 #include <osg/FrameBufferObject>
 
@@ -246,7 +244,7 @@ static const size_t NUM_CONTEXTS = 64;
 
         // Called when the terrain engine loads a new tile (or new tile heightfield data).
         // When this happens we need to update the Triton height map.
-        void onTileAdded(const osgEarth::TileKey& tileKey, osg::Node* terrain, osgEarth::TerrainCallbackContext& context)
+        void onTileAdded(const osgEarth::TileKey& tileKey, osg::Node* graph, osgEarth::TerrainCallbackContext& context)
         {
             osg::ref_ptr<TritonDrawable> drawable;
             if ( _drawable.lock(drawable) )
@@ -262,14 +260,25 @@ static const size_t NUM_CONTEXTS = 64;
         "#version " GLSL_VERSION_STR "\n"
         GLSL_DEFAULT_PRECISION_FLOAT "\n"
 
+        "#pragma import_defines(OE_TRITON_MASK_MATRIX);\n"
+
         "// terrain SDK:\n"
         "float oe_terrain_getElevation(); \n"
 
-        "varying float oe_triton_elev;\n"
+        "out float oe_triton_elev;\n"
+        
+        "#ifdef OE_TRITON_MASK_MATRIX\n"
+        "out vec2 maskCoords;\n"
+        "uniform mat4 OE_TRITON_MASK_MATRIX;\n"
+        "vec4 oe_layer_tilec;\n"
+        "#endif\n"
 
-        "void setupContour(inout vec4 VertexModel) \n"
+        "void oe_triton_setupHeightMap(inout vec4 unused) \n"
         "{ \n"
         "    oe_triton_elev = oe_terrain_getElevation(); \n"
+        "#ifdef OE_TRITON_MASK_MATRIX\n"
+        "    maskCoords = (OE_TRITON_MASK_MATRIX * oe_layer_tilec).st;\n"
+        "#endif\n"
         "} \n";
 
     // The fragment shader simply takes the texture index that we generated
@@ -281,24 +290,41 @@ static const size_t NUM_CONTEXTS = 64;
         "#version " GLSL_VERSION_STR "\n"
         GLSL_DEFAULT_PRECISION_FLOAT "\n"
 
-        "varying float oe_triton_elev;\n"
+        "#pragma import_defines(OE_TRITON_MASK_SAMPLER);\n"
 
-        "void colorContour( inout vec4 color ) \n"
+        "in float oe_triton_elev;\n"
+
+        "#ifdef OE_TRITON_MASK_SAMPLER\n"
+        "in vec2 maskCoords;\n"
+        "uniform sampler2D OE_TRITON_MASK_SAMPLER;\n"
+        "uniform float DD;\n"
+        "#endif\n"
+
+        "out vec4 out_height; \n"
+
+        "void oe_triton_drawHeightMap(inout vec4 unused) \n"
         "{ \n"
 #ifdef DEBUG_HEIGHTMAP
           // Map to black = -500m, white = +500m
           "   float nHeight = clamp(oe_triton_elev / 1000.0 + 0.5, 0.0, 1.0);\n"
 #else
           "   float nHeight = oe_triton_elev;\n"
+
+          "#ifdef OE_TRITON_MASK_SAMPLER\n"
+          "    float mask = texture(OE_TRITON_MASK_SAMPLER, maskCoords).a;\n"
+          "    nHeight *= mask; \n"
+          "#endif\n"
+
 #endif
-        "    gl_FragColor = vec4( nHeight, 0.0, 0.0, 1.0 ); \n"
+        "    out_height = vec4( nHeight, 0.0, 0.0, 1.0 ); \n"
         "} \n";
 }
 
 
 TritonDrawable::TritonDrawable(osgEarth::MapNode* mapNode, TritonContext* TRITON) :
 _TRITON(TRITON),
-_mapNode(mapNode)
+_mapNode(mapNode),
+_heightCameraParent(0L)
 {
     // call this to ensure draw() gets called every frame.
     setSupportsDisplayList( false );
@@ -319,6 +345,12 @@ TritonDrawable::~TritonDrawable()
     {
         _mapNode->getTerrain()->removeTerrainCallback( callback );
     }
+}
+
+void
+TritonDrawable::setMaskLayer(const osgEarth::ImageLayer* layer)
+{
+    _maskLayer = layer;
 }
 
 void
@@ -359,7 +391,7 @@ TritonDrawable::updateHeightMap(osg::RenderInfo& renderInfo) const
     double lookAtLat=0.0, lookAtLon=0.0, lookAtHeight=0.0;
     mapNode->getMap()->getSRS()->getEllipsoid()->convertXYZToLatLongHeight(center.x(), center.y(), center.z(), lookAtLat, lookAtLon, lookAtHeight);
 
-    // Calculate the distance to the horizon from the eyepoint
+    // Calculate the distance to the horizon from the eyepoint 
     double eyeLen = eye.length();
     double radE = mslEye.length();
     double hmax = radE + 8848.0;
@@ -410,7 +442,7 @@ TritonDrawable::updateHeightMap(osg::RenderInfo& renderInfo) const
 
 #ifdef DEBUG_HEIGHTMAP
     mapNode->getParent(0)->removeChild(0, 1);
-    mapNode->getParent(0)->insertChild(0, makeFrustumFromCamera(_heightCam));
+    mapNode->getParent(0)->insertChild(0, makeFrustumFromCamera(_heightCamera));
 #endif /* DEBUG_HEIGHTMAP */
 }
 
@@ -579,9 +611,14 @@ TritonDrawable::drawImplementation(osg::RenderInfo& renderInfo) const
     // Put GL back in a state that won't confuse the OSG state tracking:
     state->dirtyAllVertexArrays();
     state->dirtyAllAttributes();
+    state->dirtyAllModes();
     //osg::GL2Extensions* api = osg::GL2Extensions::Get(state->getContextID(), true);
     //api->glUseProgram((GLuint)0);
     //state->setLastAppliedProgramObject( 0L );
+
+    // Keep an eye on this.
+    // I had to remove something similar in another module (Rex engine) because it was causing
+    // positional attributes (like clip planes) to re-apply with an incorrect MVM. -gw
     state->apply();
 }
 
@@ -697,19 +734,45 @@ void TritonDrawable::setupHeightMap(osg::State& state)
     _heightCamera->setFinalDrawCallback(new PassHeightMapToTritonCallback(_TRITON.get()));
 
     // Install the shaders. We also bind osgEarth's elevation data attribute, which the
-    // terrain engine automatically generates at the specified location.
+    // terrain engine automatically generates at the specified location. We need to set
+    // this VP as "abstract" because it cannot run without the terrain engine's SDK 
+    // shaders installed.
     osg::StateSet* stateSet = _heightCamera->getOrCreateStateSet();
     osgEarth::VirtualProgram* heightProgram = osgEarth::VirtualProgram::getOrCreate(stateSet);
-    heightProgram->setFunction( "setupContour", vertexShader,   osgEarth::ShaderComp::LOCATION_VERTEX_MODEL);
-    heightProgram->setFunction( "colorContour", fragmentShader, osgEarth::ShaderComp::LOCATION_FRAGMENT_OUTPUT);
+    heightProgram->setName("Triton Height Map");
+    heightProgram->setFunction( "oe_triton_setupHeightMap", vertexShader,   osgEarth::ShaderComp::LOCATION_VERTEX_MODEL);
+    heightProgram->setFunction( "oe_triton_drawHeightMap", fragmentShader, osgEarth::ShaderComp::LOCATION_FRAGMENT_OUTPUT);
+    heightProgram->setIsAbstract(true);
+
+    // If we're using a mask layer, enable that in the shader:
+    osg::ref_ptr<const ImageLayer> maskLayer;
+    _maskLayer.lock(maskLayer);
+
+    if (!maskLayer.valid() && !_TRITON->getMaskLayerName().empty())
+    {
+        maskLayer = _mapNode->getMap()->getLayerByName<ImageLayer>(_TRITON->getMaskLayerName());
+        if (!maskLayer)
+        {
+            OE_WARN << LC << "Mask Layer \"" << _TRITON->getMaskLayerName() << "\" not found in Map!\n";
+        }
+    }
+
+    if (maskLayer.valid())
+    {
+        stateSet->setDefine("OE_TRITON_MASK_SAMPLER", maskLayer->shareTexUniformName().get());
+        stateSet->setDefine("OE_TRITON_MASK_MATRIX", maskLayer->shareTexMatUniformName().get());
+        OE_INFO << LC << "Using mask layer \"" << maskLayer->getName() << "\", sampler=" << maskLayer->shareTexUniformName().get() << ", matrix=" << maskLayer->shareTexMatUniformName().get() << std::endl;
+    }
 
     _heightCamera->addChild( mapNode->getTerrainEngine() );
+
     _terrainChangedCallback = new OceanTerrainChangedCallback(this);
     if ( mapNode->getTerrain() )
         mapNode->getTerrain()->addTerrainCallback( _terrainChangedCallback.get() );
 
-    osg::Group* root = osgEarth::findTopMostNodeOfType<osg::Group>(mapNode);
-    root->addChild(_heightCamera.get());
+    _heightCameraParent->addChild(_heightCamera.get());
+    //osg::Group* root = osgEarth::findTopMostNodeOfType<osg::Group>(mapNode);
+    //root->addChild(_heightCamera.get());
 
 #ifdef DEBUG_HEIGHTMAP
     mapNode->getParent(0)->addChild(CreateTextureQuadOverlay(_heightMap, 0.65, 0.05, 0.3, 0.3));

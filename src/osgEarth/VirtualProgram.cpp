@@ -50,6 +50,10 @@ using namespace osgEarth::ShaderComp;
 
 #define MAX_PROGRAM_CACHE_SIZE 128
 
+#define PREALLOCATE_APPLY_VARS 1
+
+#define MAX_CONTEXTS 16
+
 #define MAKE_SHADER_ID(X) osgEarth::hashString( X )
 
 //------------------------------------------------------------------------
@@ -671,7 +675,8 @@ _inherit           ( true ),
 _inheritSet        ( false ),
 _logShaders        ( false ),
 _logPath           ( "" ),
-_acceptCallbacksVaryPerFrame( false )
+_acceptCallbacksVaryPerFrame( false ),
+_isAbstract        ( false )
 {
     // Note: we cannot set _active here. Wait until apply().
     // It will cause a conflict in the Registry.
@@ -691,6 +696,14 @@ _acceptCallbacksVaryPerFrame( false )
     // a template object to hold program data (so we don't have to dupliate all the 
     // osg::Program methods..)
     _template = new osg::Program();
+
+#ifdef PREALLOCATE_APPLY_VARS
+    _apply.resize(MAX_CONTEXTS);
+#endif
+
+#ifdef USE_STACK_MEMORY
+    _vpStackMemory._item.resize(MAX_CONTEXTS);
+#endif
 }
 
 
@@ -704,7 +717,8 @@ _inheritSet        ( rhs._inheritSet ),
 _logShaders        ( rhs._logShaders ),
 _logPath           ( rhs._logPath ),
 _template          ( osg::clone(rhs._template.get()) ),
-_acceptCallbacksVaryPerFrame( rhs._acceptCallbacksVaryPerFrame )
+_acceptCallbacksVaryPerFrame( rhs._acceptCallbacksVaryPerFrame ),
+_isAbstract        ( rhs._isAbstract )
 {    
     // Attribute bindings.
     const osg::Program::AttribBindingList &abl = rhs.getAttribBindingList();
@@ -712,6 +726,14 @@ _acceptCallbacksVaryPerFrame( rhs._acceptCallbacksVaryPerFrame )
     {
         addBindAttribLocation( attribute->first, attribute->second );
     }
+    
+#ifdef PREALLOCATE_APPLY_VARS
+    _apply.resize(MAX_CONTEXTS);
+#endif
+
+#ifdef USE_STACK_MEMORY
+    _vpStackMemory._item.resize(MAX_CONTEXTS);
+#endif
 }
 
 VirtualProgram::~VirtualProgram()
@@ -729,6 +751,7 @@ VirtualProgram::compare(const osg::StateAttribute& sa) const
     // compare each parameter in turn against the rhs.
     COMPARE_StateAttribute_Parameter(_mask);
     COMPARE_StateAttribute_Parameter(_inherit);
+    COMPARE_StateAttribute_Parameter(_isAbstract);
 
     // compare the shader maps. Need to lock them while comparing.
     {
@@ -830,9 +853,9 @@ VirtualProgram::resizeGLObjectBuffers(unsigned maxSize)
     }
 
     // Resize the buffered_object
-    _apply.resize(maxSize);
+    //_apply.resize(maxSize);
 
-    _vpStackMemory._item.resize(maxSize);
+    //_vpStackMemory._item.resize(maxSize);
 
     _programCacheMutex.unlock();
 }
@@ -1109,6 +1132,12 @@ VirtualProgram::apply( osg::State& state ) const
         // cannot use capabilities here; it breaks serialization.
         _active = true; //Registry::capabilities().supportsGLSL();
     }
+
+    // An abstract (pure virtual) program cannot be applied.
+    if (_isAbstract)
+    {
+        return;
+    }
     
     const unsigned contextID = state.getContextID();
 
@@ -1159,6 +1188,7 @@ VirtualProgram::apply( osg::State& state ) const
 
     if ( !program.valid() )
     {
+#ifdef PREALLOCATE_APPLY_VARS
         // Access the resuable shader map for this context. Bypasses reallocation overhead.
         ApplyVars& local = _apply[contextID];
 
@@ -1166,6 +1196,9 @@ VirtualProgram::apply( osg::State& state ) const
         local.accumAttribBindings.clear();
         local.accumAttribAliases.clear();
         local.programKey.clear();
+#else
+        ApplyVars local;
+#endif
     
         // If we are inheriting, build the active shader map up to this point
         // (but not including this VP).
@@ -1977,7 +2010,8 @@ namespace
         ADD_UINT_SERIALIZER( Mask, ~0 );
 
         ADD_USER_SERIALIZER( AttribBinding );
-        //ADD_USER_SERIALIZER( FragDataBinding );
         ADD_USER_SERIALIZER( Functions );
+
+        ADD_BOOL_SERIALIZER( IsAbstract, false );
     }
 }

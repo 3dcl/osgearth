@@ -40,6 +40,7 @@
 
 #define LC "[GeoData] "
 
+
 using namespace osgEarth;
 
 
@@ -319,6 +320,33 @@ GeoPoint::transform(const SpatialReference* outSRS) const
 }
 
 bool
+GeoPoint::transformInPlace(const SpatialReference* srs) 
+{
+    if ( isValid() && srs )
+    {
+        osg::Vec3d out;
+        if ( _altMode == ALTMODE_ABSOLUTE )
+        {
+            if ( _srs->transform(_p, srs, out) )
+            {
+                set(srs, out, ALTMODE_ABSOLUTE);
+                return true;
+            }
+        }
+        else // if ( _altMode == ALTMODE_RELATIVE )
+        {
+            if ( _srs->transform2D(_p.x(), _p.y(), srs, out.x(), out.y()) )
+            {
+                out.z() = _p.z();
+                set(srs, out, ALTMODE_RELATIVE);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool
 GeoPoint::transformZ(const AltitudeMode& altMode, const TerrainResolver* terrain ) 
 {
     double z;
@@ -525,6 +553,15 @@ GeoPoint::distanceTo(const GeoPoint& rhs) const
     }
 }
 
+std::string
+GeoPoint::toString() const
+{
+    std::stringstream buf;
+    buf << "x=" << x() << ", y=" << y() << ", z=" << z() << "; m=" <<
+        (_altMode == ALTMODE_ABSOLUTE ? "abs" : "rel");
+    return buf.str();
+}
+
 
 //------------------------------------------------------------------------
 
@@ -648,7 +685,14 @@ _south  ( south ),
 _north  ( north )
 {
     if ( isValid() )
+    {
+        if (_srs->isGeographic() && (_east-_west < 360.0))
+        {
+            _west = s_normalizeLongitude(_west);
+            _east = s_normalizeLongitude(_east);
+        }
         recomputeCircle();
+    }
 }
 
 
@@ -660,7 +704,14 @@ _south  ( bounds.yMin() ),
 _north  ( bounds.yMax() )
 {    
     if ( isValid() )
+    {
+        if (_srs->isGeographic() && (_east-_west < 360.0))
+        {
+            _west = s_normalizeLongitude(_west);
+            _east = s_normalizeLongitude(_east);
+        }
         recomputeCircle();
+    }
 }
 
 GeoExtent::GeoExtent( const GeoExtent& rhs ) :
@@ -2126,9 +2177,9 @@ GeoHeightField::createSubSample( const GeoExtent& destEx, unsigned int width, un
     double xstep = div / (double)(width-1);
     double ystep = div / (double)(height-1);
     
-    for( x = x0, col = 0; col < width; x += xstep, col++ )
+    for( x = x0, col = 0; col < (int)width; x += xstep, col++ )
     {
-        for( y = y0, row = 0; row < height; y += ystep, row++ )
+        for( y = y0, row = 0; row < (int)height; y += ystep, row++ )
         {
             float height = HeightFieldUtils::getHeightAtNormalizedLocation(
                 _heightField.get(), x, y, interpolation );

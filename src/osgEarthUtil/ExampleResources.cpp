@@ -41,6 +41,7 @@
 #include <osgEarthAnnotation/AnnotationRegistry>
 #include <osgEarth/ScreenSpaceLayout>
 #include <osgEarth/TerrainEngineNode>
+#include <osgEarth/NodeUtils>
 
 #include <osgEarth/XmlUtils>
 #include <osgEarth/StringUtils>
@@ -538,7 +539,7 @@ MapNodeHelper::parse(MapNode*             mapNode,
             mapNode->getMap()->beginUpdate();
             for( ImageLayerVector::iterator i = imageLayers.begin(); i != imageLayers.end(); ++i )
             {
-                mapNode->getMap()->addImageLayer( i->get() );
+                mapNode->getMap()->addLayer( i->get() );
             }
             mapNode->getMap()->endUpdate();
         }
@@ -550,17 +551,6 @@ MapNodeHelper::parse(MapNode*             mapNode,
     if ( !vertScaleConf.empty() )
     {
         mapNode->getTerrainEngine()->addEffect( new VerticalScale(vertScaleConf) );
-    }
-
-    // Install a contour map effect.
-    if (args.read("--contourmap"))
-    {
-        mapNode->addExtension(Extension::create("contourmap", ConfigOptions()));
-
-        // with the cmdline switch, hids all the image layer so we can see the contour map.
-        for (unsigned i = 0; i < mapNode->getMap()->getNumImageLayers(); ++i) {
-            mapNode->getMap()->getImageLayerAt(i)->setVisible(false);
-        }
     }
 
     // Generic named value uniform with min/max.
@@ -606,7 +596,8 @@ MapNodeHelper::parse(MapNode*             mapNode,
     // Simple sky model:
     if (args.read("--sky"))
     {
-        mapNode->addExtension(Extension::create("sky_simple", ConfigOptions()) );
+        std::string ext = mapNode->getMap()->isGeocentric() ? "sky_simple" : "sky_gl";
+        mapNode->addExtension(Extension::create(ext, ConfigOptions()) );
     }
 
     // Simple ocean model:
@@ -655,11 +646,12 @@ MapNodeHelper::parse(MapNode*             mapNode,
             caster->setTextureImageUnit( unit );
             caster->setLight( view->getLight() );
             caster->getShadowCastingGroup()->addChild( mapNode->getModelLayerGroup() );
+            //caster->getShadowCastingGroup()->addChild(mapNode->getTerrainEngine());
             //insertParent(caster, mapNode);
             //root = findTopOfGraph(caster)->asGroup();
             if ( mapNode->getNumParents() > 0 )
             {
-                insertGroup(caster, mapNode->getParent(0));
+                osgEarth::insertGroup(caster, mapNode->getParent(0));
             }
             else
             {
@@ -802,7 +794,7 @@ ui::Control* SkyControlFactory::create(SkyNode* sky)
         skyYearSlider->addEventHandler( new SkyYearSlider(sky, yearLabel) );
 
         ++r;
-        grid->setControl(0, r, new ui::LabelControl("Min.Ambient: ", 16) );
+        grid->setControl(0, r, new ui::LabelControl("Ambient Light: ", 16) );
         ui::HSliderControl* ambient = grid->setControl(1, r, new ui::HSliderControl(0.0f, 1.0f, sky->getSunLight()->getAmbient().r()));
         ambient->addEventHandler( new AmbientBrightnessHandler(sky) );
         grid->setControl(2, r, new ui::LabelControl(ambient) );
